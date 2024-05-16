@@ -184,6 +184,14 @@ config INPUT_APMPOWER
 	  To compile this driver as a module, choose M here: the
 	  module will be called apm-power.
 
+config AW9610X_SAR
+       bool "Awinic AW9610X_Sar driver Support"
+       default n
+       ---help---
+         Awinic AW9610X_Sar driver 
+         Say Y here if your system support Awinic AW9610X_Sar control.
+         If unsure, say N.
+
 comment "Input Device Drivers"
 
 source "drivers/input/keyboard/Kconfig"
@@ -195,6 +203,8 @@ source "drivers/input/joystick/Kconfig"
 source "drivers/input/tablet/Kconfig"
 
 source "drivers/input/touchscreen/Kconfig"
+
+source "drivers/input/fingerprint/Kconfig"
 
 source "drivers/input/misc/Kconfig"
 

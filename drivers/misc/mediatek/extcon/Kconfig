@@ -1,0 +1,18 @@
+config EXTCON_MTK_USB
+	tristate "MediaTek EXTCON USB Support"
+	select EXTCON
+	select USB_ROLE_SWITCH
+	help
+	  Say Y here to enable extcon support for USB cable detection
+	  on the Mediatek PMIC.
+
+config MID_CHARGER_OTG_DRVBUS
+	bool "mid charge ic support otg enable"
+	default n
+	help
+	  Say Y here to enable charge ic offer power for USB otg.
+config MID_US828ZA_TYPEC_OTG_SUPPORT
+	bool "mid MID_US828ZA_TYPEC_OTG_SUPPORT support otg enable"
+	default n
+	help
+	  Say Y here to enable charge ic offer power for US828ZA BOARD USB otg with DC+USB func.

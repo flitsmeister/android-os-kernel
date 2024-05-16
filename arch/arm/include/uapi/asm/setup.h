@@ -17,10 +17,19 @@
 
 #include <linux/types.h>
 
-#define COMMAND_LINE_SIZE 1024
+#define COMMAND_LINE_SIZE 2048
 
 /* The list ends with an ATAG_NONE node. */
 #define ATAG_NONE	0x00000000
+/* general memory descriptor */
+struct mem_desc {
+	u64 start;
+	u64 size;
+};
+struct dram_info {
+	u32 rank_num;
+	struct mem_desc rank_info[4];
+};
 
 struct tag_header {
 	__u32 size;

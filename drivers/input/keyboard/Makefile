@@ -5,6 +5,7 @@
 
 # Each configuration option enables a list of files.
 
+obj-$(CONFIG_MID_UART_KEYBOARD)		+= mid_uart_dock.o
 obj-$(CONFIG_KEYBOARD_ADC)		+= adc-keys.o
 obj-$(CONFIG_KEYBOARD_ADP5520)		+= adp5520-keys.o
 obj-$(CONFIG_KEYBOARD_ADP5588)		+= adp5588-keys.o
@@ -40,7 +41,12 @@ obj-$(CONFIG_KEYBOARD_MATRIX)		+= matrix_keypad.o
 obj-$(CONFIG_KEYBOARD_MAX7359)		+= max7359_keypad.o
 obj-$(CONFIG_KEYBOARD_MCS)		+= mcs_touchkey.o
 obj-$(CONFIG_KEYBOARD_MPR121)		+= mpr121_touchkey.o
+ifeq (y, $(filter y, $(CONFIG_KEYBOARD_MTK_PMIC)))
+obj-$(CONFIG_KEYBOARD_MTK)	 	+= mtk-kpd.o
 obj-$(CONFIG_KEYBOARD_MTK_PMIC) 	+= mtk-pmic-keys.o
+else
+obj-$(CONFIG_KEYBOARD_MTK)		+= mediatek/
+endif
 obj-$(CONFIG_KEYBOARD_NEWTON)		+= newtonkbd.o
 obj-$(CONFIG_KEYBOARD_NOMADIK)		+= nomadik-ske-keypad.o
 obj-$(CONFIG_KEYBOARD_NSPIRE)		+= nspire-keypad.o

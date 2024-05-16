@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/*
+ * Copyright (c) 2019 MediaTek Inc.
+ *
+ */
+#include <dt-bindings/pinctrl/mt6771-pinfunc.h>
+&pio{
+    spi_pins_1:spi0@1{
+        pins_cmd_dat{
+            pinmux = <PINMUX_GPIO85__FUNC_SPI0_MI>,
+                    <PINMUX_GPIO86__FUNC_SPI0_CSB>,
+                    <PINMUX_GPIO87__FUNC_SPI0_MO>,
+                    <PINMUX_GPIO88__FUNC_SPI0_CLK>;
+                    bias-disable;
+        };
+    };
+};
+
+&spi0 {
+    #address-cells = <1>;
+    #size-cells = <0>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&spi_pins_1>;
+    status = "okay";
+    himax_touch@0 {
+        compatible = "himax,hxcommon";
+        reg = <0>;
+        spi-max-frequency = <10000000>;
+		himax,irq-gpio = <&pio 5 0>;
+		himax,rst-gpio = <&pio 6 0>;
+		himax,panel-coords = <0 1200 0 2000>;
+    };
+};    /* HX83102_SPI */

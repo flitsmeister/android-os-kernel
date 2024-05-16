@@ -1,0 +1,1 @@
+obj-y += bf2553Lmipi_Sensor.o

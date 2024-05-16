@@ -3235,6 +3235,22 @@ int regulator_set_voltage(struct regulator *regulator, int min_uV, int max_uV)
 }
 EXPORT_SYMBOL_GPL(regulator_set_voltage);
 
+#ifdef CONFIG_JOYA_MT6357_CUST_VCAMD
+int mt6357_cust_set_vcamd(struct regulator *regulator, int min_uV, int max_uV)
+{
+	int ret = 0;
+
+	regulator_lock_supply(regulator->rdev);
+
+	ret = _regulator_do_set_voltage(regulator->rdev, min_uV, max_uV);
+
+	regulator_unlock_supply(regulator->rdev);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(mt6357_cust_set_vcamd);
+#endif
+
 static inline int regulator_suspend_toggle(struct regulator_dev *rdev,
 					   suspend_state_t state, bool en)
 {

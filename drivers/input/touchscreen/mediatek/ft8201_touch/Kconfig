@@ -1,0 +1,11 @@
+#
+# Focaltech Touchscreen driver configuration
+#
+
+config TOUCHSCREEN_MTK_FT8201
+    bool "Focaltech 8201 Touchscreen"
+    depends on I2C
+    help
+      Say Y here if you have Focaltech touch panel.
+      If unsure, say N.
+    

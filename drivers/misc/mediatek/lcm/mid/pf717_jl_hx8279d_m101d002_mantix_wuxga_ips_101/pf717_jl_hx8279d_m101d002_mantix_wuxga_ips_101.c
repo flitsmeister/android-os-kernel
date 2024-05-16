@@ -1,0 +1,331 @@
+#ifndef BUILD_LK
+#include <linux/string.h>
+#endif
+#include "lcm_drv.h"
+
+#ifdef BUILD_LK
+#include <platform/mt_gpio.h>
+#include <platform/mt_pmic.h>
+#else
+#include <linux/string.h>
+#include <linux/kernel.h>
+#include <linux/gpio.h>
+#include <linux/pinctrl/consumer.h>
+#endif
+
+#include "lcm_drv.h"
+
+// ---------------------------------------------------------------------------
+//  Local Constants
+// ---------------------------------------------------------------------------
+
+#define FRAME_WIDTH  										(1200)
+#define FRAME_HEIGHT 										(1920)
+
+#define REGFLAG_DELAY             							0xFC
+#define REGFLAG_END_OF_TABLE      							0xFE   // END OF REGISTERS MARKER
+
+#define LCM_DSI_CMD_MODE									0
+
+// ---------------------------------------------------------------------------
+//  Local Variables
+// ---------------------------------------------------------------------------
+
+static struct LCM_UTIL_FUNCS lcm_util;
+
+extern unsigned int GPIO_LCM_PWR_EN;
+extern unsigned int GPIO_LCM_RST;
+extern unsigned int GPIO_LCM_BL_EN;
+
+#define SET_RESET_PIN(v)	(lcm_util.set_reset_pin((v)))
+#define MDELAY(n)		(lcm_util.mdelay(n))
+#define UDELAY(n)		(lcm_util.udelay(n))
+#define GPIO_OUT_ONE 1
+#define GPIO_OUT_ZERO 0
+// ---------------------------------------------------------------------------
+//  Local Functions
+// ---------------------------------------------------------------------------
+
+#define dsi_set_cmdq_V2(cmd, count, ppara, force_update)	lcm_util.dsi_set_cmdq_V2(cmd, count, ppara, force_update)
+#define dsi_set_cmdq(pdata, queue_size, force_update)		lcm_util.dsi_set_cmdq(pdata, queue_size, force_update)
+#define wrtie_cmd(cmd)										lcm_util.dsi_write_cmd(cmd)
+#define write_regs(addr, pdata, byte_nums)					lcm_util.dsi_write_regs(addr, pdata, byte_nums)
+#define read_reg											lcm_util.dsi_read_reg()
+#define read_reg_v2(cmd, buffer, buffer_size)   			lcm_util.dsi_dcs_read_lcm_reg_v2(cmd, buffer, buffer_size)    
+
+#ifndef BUILD_LK
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/slab.h>
+#include <linux/init.h>
+#include <linux/list.h>
+#include <linux/i2c.h>
+#include <linux/irq.h>
+/* #include <linux/jiffies.h> */
+/* #include <linux/delay.h> */
+#include <linux/uaccess.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
+#include <linux/platform_device.h>
+#endif
+
+static void lcm_set_gpio_output(unsigned int GPIO, unsigned int output)
+{
+	if (GPIO == 0xFFFFFFFF) {		
+		return;
+	}
+	gpio_direction_output(GPIO, output);
+	gpio_set_value(GPIO, (output > 0) ? GPIO_OUT_ONE : GPIO_OUT_ZERO);
+}
+
+static void lcd_power_en(unsigned char enabled)
+{
+    if (enabled)
+    {
+        lcm_set_gpio_output(GPIO_LCM_PWR_EN, GPIO_OUT_ONE);
+    }
+    else
+    {
+        lcm_set_gpio_output(GPIO_LCM_PWR_EN, GPIO_OUT_ZERO);
+    }
+}
+
+static void avdd_enable(unsigned char enabled)
+{
+    if (enabled)
+    {
+        lcm_set_gpio_output(GPIO_LCM_BL_EN, GPIO_OUT_ONE);
+    }
+    else
+    {
+        lcm_set_gpio_output(GPIO_LCM_BL_EN, GPIO_OUT_ZERO);
+    }
+}
+
+
+static void lcd_reset(unsigned char enabled)
+{
+    if (enabled)
+    {
+        lcm_set_gpio_output(GPIO_LCM_RST, 1);
+    }
+    else
+    {	
+        lcm_set_gpio_output(GPIO_LCM_RST, 0);
+    	
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  LCM Driver Implementations
+// ---------------------------------------------------------------------------
+struct LCM_setting_table {
+	unsigned cmd;
+	unsigned char count;
+	unsigned char para_list[64];
+};
+
+static struct LCM_setting_table lcm_initialization_setting[] = 
+{
+	{0xB0, 1, {0x01}},
+	{0xC0, 1, {0x26}},
+	{0xC1, 1, {0x10}},
+	{0xC2, 1, {0x0E}},
+	{0xC3, 1, {0x00}},
+	{0xC4, 1, {0x00}},
+	{0xC5, 1, {0x23}},
+	{0xC6, 1, {0x11}},
+	{0xC7, 1, {0x22}},
+	{0xC8, 1, {0x20}},
+	{0xC9, 1, {0x1E}},
+	{0xCA, 1, {0x1C}},
+	{0xCB, 1, {0x0C}},
+	{0xCC, 1, {0x0A}},
+	{0xCD, 1, {0x08}},
+	{0xCE, 1, {0x06}},
+	{0xCF, 1, {0x18}},
+	{0xD0, 1, {0x02}},
+	{0xD1, 1, {0x00}},
+	{0xD2, 1, {0x00}},
+	{0xD3, 1, {0x00}},
+	{0xD4, 1, {0x26}},
+	{0xD5, 1, {0x0F}},
+	{0xD6, 1, {0x0D}},
+	{0xD7, 1, {0x00}},
+	{0xD8, 1, {0x00}},
+	{0xD9, 1, {0x23}},
+	{0xDA, 1, {0x11}},
+	{0xDB, 1, {0x21}},
+	{0xDC, 1, {0x1F}},
+	{0xDD, 1, {0x1D}},
+	{0xDE, 1, {0x1B}},
+	{0xDF, 1, {0x0B}},
+	{0xE0, 1, {0x09}},
+	{0xE1, 1, {0x07}},
+	{0xE2, 1, {0x05}},
+	{0xE3, 1, {0x17}},
+	{0xE4, 1, {0x01}},
+	{0xE5, 1, {0x00}},
+	{0xE6, 1, {0x00}},
+	{0xE7, 1, {0x00}},
+	{0xB0, 1, {0x03}},
+	{0xBE, 1, {0x04}},
+	{0xB9, 1, {0x40}},
+	{0xCC, 1, {0x88}},
+	{0xC8, 1, {0x0C}},
+	{0xC9, 1, {0x07}},
+	{0xCD, 1, {0x01}},
+	{0xCA, 1, {0x40}},
+	{0xCE, 1, {0x1A}},
+	{0xCF, 1, {0x60}},
+	{0xD2, 1, {0x08}},
+	{0xD3, 1, {0x08}},
+	{0xDB, 1, {0x01}},
+	{0xD9, 1, {0x06}},
+	{0xD4, 1, {0x00}},
+	{0xD5, 1, {0x01}},
+	{0xD6, 1, {0x04}},
+	{0xD7, 1, {0x03}},
+	{0xC2, 1, {0x00}},
+	{0xC3, 1, {0x0E}},
+	{0xC4, 1, {0x00}},
+	{0xC5, 1, {0x0E}},
+	{0xDD, 1, {0x00}},
+	{0xDE, 1, {0x0E}},
+	{0xE6, 1, {0x00}},
+	{0xE7, 1, {0x0E}},
+	{0xC2, 1, {0x00}},
+	{0xC3, 1, {0x0E}},
+	{0xC4, 1, {0x00}},
+	{0xC5, 1, {0x0E}},
+	{0xDD, 1, {0x00}},
+	{0xDE, 1, {0x0E}},
+	{0xE6, 1, {0x00}},
+	{0xE7, 1, {0x0E}},
+	{0xB0, 1, {0x06}},
+	{0xC0, 1, {0xA5}},
+	{0xD5, 1, {0x1C}},
+	{0xC0, 1, {0x00}},
+	{0xB0, 1, {0x00}},
+	{0xF9, 1, {0x5C}},
+	{0xC2, 1, {0x14}},
+	{0xC4, 1, {0x14}},
+	{0xBF, 1, {0x15}},
+	{0xC0, 1, {0x0C}},
+
+	
+	{0x11, 0, {}},
+	{REGFLAG_DELAY, 120, {}},
+	//sleep out
+	{0x29, 0, {}},
+	{REGFLAG_DELAY, 20, {}},
+};
+
+static void push_table(struct LCM_setting_table *table, unsigned int count, unsigned char force_update)
+{
+	unsigned int i;
+    unsigned int cmd;
+
+	for (i = 0; i < count; i++) {
+		cmd = table[i].cmd;
+		switch (cmd) {
+		case REGFLAG_DELAY :
+			MDELAY(table[i].count);
+			break;
+		case REGFLAG_END_OF_TABLE :
+			break;
+            default:
+                dsi_set_cmdq_V2(cmd, table[i].count, table[i].para_list, force_update);
+                break;
+		}
+    }
+}
+static void lcm_set_util_funcs(const struct LCM_UTIL_FUNCS *util)
+{
+	memcpy(&lcm_util, util, sizeof(struct LCM_UTIL_FUNCS));
+}
+
+static void lcm_get_params(struct LCM_PARAMS *params)
+{
+   memset(params, 0, sizeof(struct LCM_PARAMS));
+
+	params->type = LCM_TYPE_DSI;
+	params->width = FRAME_WIDTH;
+	params->height = FRAME_HEIGHT;
+
+    params->dsi.mode    = SYNC_EVENT_VDO_MODE;//BURST_VDO_MODE
+    params->dsi.LANE_NUM                = LCM_FOUR_LANE;//LCM_THREE_LANE;
+
+    params->dsi.data_format.format      = LCM_DSI_FORMAT_RGB888;
+
+    params->dsi.PS=LCM_PACKED_PS_24BIT_RGB888;
+    //params->dsi.word_count=800*3; 
+
+
+    params->dsi.vertical_sync_active                            = 4; //2; //4;
+    params->dsi.vertical_backporch                              = 16; //10; //16;
+    params->dsi.vertical_frontporch                             = 20;//5; 
+    params->dsi.vertical_active_line                            = FRAME_HEIGHT; 
+
+    params->dsi.horizontal_sync_active                          = 10; //16; // 10; //5;//6;
+    params->dsi.horizontal_backporch                            = 40; //48; //60; //60; //80;
+    params->dsi.horizontal_frontporch                           = 80; //16; //60; 
+    params->dsi.horizontal_active_pixel                         = FRAME_WIDTH;
+
+   // params->dsi.PLL_CLOCK = 231;
+   params->dsi.PLL_CLOCK = 478;
+}
+
+
+static void lcm_init(void)
+{
+	
+	lcd_power_en(1);
+	MDELAY(10);  
+	avdd_enable(1);
+	lcd_reset(1);
+	MDELAY(20);
+	lcd_reset(0);	
+	MDELAY(20);
+	lcd_reset(1);
+	MDELAY(120);//Must > 5ms
+	//init_lcm_registers();
+	push_table(lcm_initialization_setting, sizeof(lcm_initialization_setting) / sizeof(struct LCM_setting_table), 1);
+	MDELAY(10);
+}
+
+
+static void lcm_suspend(void)
+{
+	unsigned int data_array[16];
+
+	data_array[0]=0x00280500; // Display Off
+	dsi_set_cmdq(data_array, 1, 1);
+	MDELAY(10); 
+
+	data_array[0] = 0x00100500; // Sleep In
+	dsi_set_cmdq(data_array, 1, 1);
+	MDELAY(10);
+    avdd_enable(0);
+    MDELAY(50);
+    lcd_reset(0);
+    MDELAY(20);
+	lcd_power_en(0);
+}
+
+static void lcm_resume(void)
+{
+  lcm_init();
+}
+
+struct LCM_DRIVER pf717_jl_hx8279d_m101d002_mantix_wuxga_ips_101_lcm_drv =
+{
+    .name			= "pf717_jl_hx8279d_m101d002_mantix_wuxga_ips_101",
+    .set_util_funcs = lcm_set_util_funcs,
+    .get_params     = lcm_get_params,
+    .init           = lcm_init,
+    .suspend        = lcm_suspend,
+    .resume         = lcm_resume,
+};
+

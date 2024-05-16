@@ -446,6 +446,9 @@ enum power_supply_usb_type {
 	POWER_SUPPLY_USB_TYPE_PD_DRP,		/* PD Dual Role Port */
 	POWER_SUPPLY_USB_TYPE_PD_PPS,		/* PD Programmable Power Supply */
 	POWER_SUPPLY_USB_TYPE_APPLE_BRICK_ID,	/* Apple Charging Method */
+#if defined(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT) && !defined(CONFIG_TCPC_CLASS)
+	POWER_SUPPLY_USB_TYPE_FLOAT,		/* Floating charger */
+#endif
 };
 
 /* Indicates USB Type-C CC connection status */
