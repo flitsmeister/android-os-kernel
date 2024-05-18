@@ -4373,7 +4373,7 @@ firmware_class.path=/vendor/firmware loop.max_part=7 clk_ignore_unused";
 		enable_pe_plus;
 		enable_pd20_reset;
 		power_path_support;
-		max_charger_voltage = <9000000>;
+		max_charger_voltage = <16000000>;
 		fast_charge_voltage = <3000000>;
 
 		/* charging current */
@@ -4404,8 +4404,8 @@ firmware_class.path=/vendor/firmware loop.max_part=7 clk_ignore_unused";
 		enable_dynamic_mivr;
 
 		/* common */
-		battery_cv = <4350000>;
-		max_charger_voltage = <12000000>;
+		battery_cv = <4200000>;
+		max_charger_voltage = <16000000>;
 		min_charger_voltage = <4600000>;
 
 		/* dynamic mivr */
@@ -4449,7 +4449,7 @@ firmware_class.path=/vendor/firmware loop.max_part=7 clk_ignore_unused";
 		enable_min_charge_temp;
 		min_charge_temp = <0>;
 		min_charge_temp_plus_x_degree = <6>;
-		max_charge_temp = <85>;
+		max_charge_temp = <80>;
 		max_charge_temp_minus_x_degree = <47>;
 
 		/* PE */
