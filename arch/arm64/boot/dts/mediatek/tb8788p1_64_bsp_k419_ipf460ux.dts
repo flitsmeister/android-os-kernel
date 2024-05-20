@@ -144,7 +144,7 @@
 
 &i2c1 {
     alsps@29 {
-        compatible ="mediatek,alsps";
+        compatible = "mediatek,alsps";
         pinctrl-names = "pin_default", "pin_cfg";
         pinctrl-0 = <&alsps_intpin_default>;
         pinctrl-1 = <&alsps_intpin_cfg>;
