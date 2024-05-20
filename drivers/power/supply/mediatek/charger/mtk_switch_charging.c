@@ -269,8 +269,7 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 					info->data.usb_charger_current;
 		}
 	} else if (info->chr_type == NONSTANDARD_CHARGER) {
-		pdata->input_current_limit = (800000 +
-				info->data.non_std_ac_charger_current);
+		pdata->input_current_limit = (800000 + info->data.non_std_ac_charger_current);//leewin add 800mA
 		pdata->charging_current_limit =
 				info->data.non_std_ac_charger_current;
 	} else if (info->chr_type == STANDARD_CHARGER) {
