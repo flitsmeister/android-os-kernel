@@ -223,9 +223,9 @@ struct FUELGAUGE_TEMPERATURE Fg_Temperature_Table[21] = {
 		{35, 6948},
 		{40, 5834},
 		{45, 4917},
-		{50, 4161},
 		{55, 3535},
-		{60, 3014}
+		{65, 2586},
+		{75, 1924}
 };
 #endif
 

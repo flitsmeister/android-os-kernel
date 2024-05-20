@@ -1444,7 +1444,7 @@ int BattThermistorConverTemp(int Res)
 	if (Res >= Fg_Temperature_Table[0].TemperatureR) {
 		TBatt_Value = -400;
 	} else if (Res <= Fg_Temperature_Table[20].TemperatureR) {
-		TBatt_Value = 600;
+		TBatt_Value = 750;
 	} else {
 		RES1 = Fg_Temperature_Table[0].TemperatureR;
 		TMP1 = Fg_Temperature_Table[0].BatteryTemp;
@@ -1742,6 +1742,8 @@ int force_get_tbat_internal(bool update)
 	return bat_temperature_val / 10;
 }
 
+int g_eta696x_bat_exist = 1; //leewin add
+
 int force_get_tbat(bool update)
 {
 	int bat_temperature_val = 0;
@@ -1791,6 +1793,7 @@ int force_get_tbat(bool update)
 		}
 
 		gm.ntc_disable_nafg = true;
+		g_eta696x_bat_exist = 0; //leewin add
 		bm_err("[%s] ntc_disable_nafg %d %d\n",
 			__func__,
 			bat_temperature_val,
