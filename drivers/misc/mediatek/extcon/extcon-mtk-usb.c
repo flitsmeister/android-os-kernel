@@ -362,6 +362,9 @@ static int mtk_usb_extcon_set_vbus(struct mtk_extcon_info *extcon,
 
 		gpiod_set_value(extcon->typec_otg_en, 1);
 		devm_gpiod_put(extcon->dev, extcon->typec_otg_en);
+	#elif defined(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT)//add for IPF460_UX30 OTG
+		gpiod_set_value(extcon->drvbus_gpiod, 1);
+		devm_gpiod_put(extcon->dev, extcon->drvbus_gpiod);
 	#else
 		if (extcon->vbus_vol) {
 			ret = regulator_set_voltage(vbus,
@@ -406,6 +409,9 @@ static int mtk_usb_extcon_set_vbus(struct mtk_extcon_info *extcon,
 
 		gpiod_set_value(extcon->typec_otg_en, 0);
 		devm_gpiod_put(extcon->dev, extcon->typec_otg_en);
+	#elif defined(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT)//add for IPF460_UX30 OTG
+		gpiod_set_value(extcon->drvbus_gpiod, 0);
+		devm_gpiod_put(extcon->dev, extcon->drvbus_gpiod);
 	#else
 		regulator_disable(vbus);
 	#endif
@@ -608,6 +614,13 @@ static int mtk_usb_extcon_id_pin_init(struct mtk_extcon_info *extcon)
 		dev_info(extcon->dev, "failed to get typec_otg_en gpio\n");
 		return -ENODEV;
 	}
+#elif defined(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT)//add for IPF460_UX30 OTG
+	extcon->drvbus_gpiod = devm_gpiod_get(extcon->dev, "drvbus", GPIOD_OUT_LOW);
+	if (!extcon->drvbus_gpiod || IS_ERR(extcon->drvbus_gpiod)) {
+		dev_info(extcon->dev, "failed to get drvbus gpio\n");
+		return -ENODEV;
+	}
+	dev_info(extcon->dev, "get drvbus gpio: %lx\n", extcon->drvbus_gpiod);
 #else
 
 #endif

@@ -110,16 +110,16 @@ extern void mt_auxadc_enableBackgroundDection(u16 channel, u16 volt, u16 period,
 extern void mt_auxadc_disableBackgroundDection(u16 channel);
 extern u16 mt_auxadc_getCurrentChannel(void);
 extern u16 mt_auxadc_getCurrentTrigger(void);
-//extern int IMM_GetOneChannelValue(int dwChannel, int data[4], int *rawdata);
-//extern int IMM_auxadc_GetOneChannelValue_Cali(int Channel, int *voltage);
-//extern int IMM_IsAdcInitReady(void);
-//extern void set_vdc_auxadc_irq(bool  enable, bool flag);
-//extern void set_vusb_auxadc_irq(bool  enable, bool flag);
-//extern void set_diso_otg(bool enable);
-extern unsigned int get_dc_val(void);
-extern unsigned int get_usb_val(void);
-extern unsigned int charging_get_diso_state(void *data);
+extern int IMM_GetOneChannelValue(int dwChannel, int data[4], int *rawdata);
+extern int IMM_auxadc_GetOneChannelValue_Cali(int Channel, int *voltage);
+extern int IMM_IsAdcInitReady(void);
+extern void set_vdc_auxadc_irq(bool  enable, bool flag);
+extern void set_vusb_auxadc_irq(bool  enable, bool flag);
+extern void set_diso_otg(bool enable);
+//extern unsigned int get_dc_val(void);
+//extern unsigned int get_usb_val(void);
+//extern unsigned int charging_get_diso_state(void *data);
 extern bool mt_usb_is_device(void);
-extern void mt_usb_connect(void);
-extern void mt_usb_disconnect(void);
+//extern void mt_usb_connect(void);
+//extern void mt_usb_disconnect(void);
 #endif /*#ifndef __MTK_DISO_H__*/

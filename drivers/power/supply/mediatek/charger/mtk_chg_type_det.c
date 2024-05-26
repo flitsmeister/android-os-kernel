@@ -30,6 +30,7 @@
 #include <linux/time.h>
 #include <linux/uaccess.h>
 #include <linux/reboot.h>
+#include <linux/gpio.h>
 
 #include <linux/of.h>
 #include <linux/extcon.h>
@@ -98,7 +99,9 @@ struct chg_type_info {
 	bool ignore_usb;
 	bool plugin;
 	bool bypass_chgdet;
-#ifdef CONFIG_MACH_MT6771
+//#ifdef CONFIG_MACH_MT6771
+//IPF460_UX30
+#if 0
 	struct power_supply *chr_psy;
 	struct notifier_block psy_nb;
 #endif
@@ -322,6 +325,24 @@ static int mt_charger_set_property(struct power_supply *psy,
 
 	dump_charger_name(mtk_chg->chg_type);
 
+//IPF460_UX30 add begin
+#if defined(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT)
+	if ((!cti->ignore_usb) && (gpio_get_value(41 + 64) >0)) {
+	/* usb */
+	if ((mtk_chg->chg_type == STANDARD_HOST) || (mtk_chg->chg_type == CHARGING_HOST)) {
+		mt_usb_connect_v1();
+		#ifdef CONFIG_EXTCON_USB_CHG
+		info->vbus_state = 1;
+		#endif
+	} else {
+			mt_usb_disconnect_v1();
+			#ifdef CONFIG_EXTCON_USB_CHG
+			info->vbus_state = 0;
+			#endif
+		}
+	}
+#else
+
 #ifdef  CONFIG_MID_DOCKING_SUPPORT
 	if ((!cti->ignore_usb) && (get_docking_status() == 0)) {
 		printk(" %s:%d get_docking_status():%d\n",__func__,__LINE__, get_docking_status());
@@ -343,6 +364,7 @@ static int mt_charger_set_property(struct power_supply *psy,
 			#endif
 		}
 	}
+#endif //IPF460_UX30 add end
 
 	queue_work(cti->chg_in_wq, &cti->chg_in_work);
 	#ifdef CONFIG_EXTCON_USB_CHG
@@ -632,7 +654,8 @@ static void init_extcon_work(struct work_struct *work)
 }
 #endif
 
-#ifdef CONFIG_MACH_MT6771
+//#ifdef CONFIG_MACH_MT6771
+#if 0 //IPF460_UX30
 static int mt6370_psy_notifier(struct notifier_block *nb,
 				unsigned long event, void *data)
 {
@@ -856,7 +879,8 @@ static int mt_charger_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, mt_chg);
 	device_init_wakeup(&pdev->dev, true);
 
-#ifdef CONFIG_MACH_MT6771
+//#ifdef CONFIG_MACH_MT6771
+#if 0 //IPF460_UX30
 	cti->psy_nb.notifier_call = mt6370_psy_notifier;
 	ret = power_supply_reg_notifier(&cti->psy_nb);
 	if (ret)

@@ -2136,12 +2136,12 @@ firmware_class.path=/vendor/firmware loop.max_part=7 clk_ignore_unused";
 
 	extcon_usb: extcon_usb {
 		compatible = "mediatek,extcon-usb";
-		vbus-supply = <&otg_vbus>;
+		/*vbus-supply = <&otg_vbus>;
 		vbus-voltage = <5000000>;
 		vbus-current = <1800000>;
+		charger = <&mt6370_chg>;*/
 		dev-conn = <&ssusb>;
 		mediatek,bypss-typec-sink = <1>;
-		charger = <&mt6370_chg>;
 	};
 
 	audsys: audsys@11220000 {
@@ -4514,6 +4514,10 @@ firmware_class.path=/vendor/firmware loop.max_part=7 clk_ignore_unused";
 	pd_adapter: pd_adapter {
 		compatible = "mediatek,pd_adapter";
 		adapter_name = "pd_adapter";
+	};
+
+	eta6963: eta6963 {
+		compatible = "mediatek,eta696x_chg_driver";
 	};
 
 	rt9465_slave_chr: rt9465_slave_chr {

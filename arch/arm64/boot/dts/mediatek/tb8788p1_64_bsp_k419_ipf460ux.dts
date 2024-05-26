@@ -231,40 +231,22 @@
 };
 /* AWINIC AW87390 Smart PA End */
 
-
-&mt6370_pmu {
-    mt6370,intr_gpio_num = <10>; /* direct defined GPIO num */
-    mt6370,intr_gpio = <&pio 10 0x0>;
-        rgbled {
-                        compatible = "mediatek,mt6370_pmu_rgbled";
-                        interrupt-names = "isink4_short", "isink3_short",
-                                          "isink2_short", "isink1_short",
-                                          "isink4_open", "isink3_open",
-                                          "isink2_open", "isink1_open";
-                        /* name cnt must be 4 */
-                        mt,led_name = "mt6370_pmu_led1", "blue",
-                                        "green", "red";
-                        /* trigger cnt must be 4, mode can be selected as */
-                        /* cc_mode -> const current mode */
-                        /* pwm_mode -> pwm dimming mode */
-                        /* breath_mode -> as the name */
-                        mt,led_default_trigger = "cc_mode", "cc_mode",
-                                                 "cc_mode", "cc_mode";
-        };
-};
-&mt6370_typec {
- mt6370pd,intr_gpio_num = <41>; /* direct defined GPIO num */
- mt6370pd,intr_gpio = <&pio 41 0x0>;
-};
-
-&mt6370_chg {
-    usb = <&ssusb>;
-    charger = <&mt6370_chg>;
-    bc12_sel = <0>;
+&i2c6 {
+	eta696x_chg: eta696x-charger@6b {
+		compatible = "mediatek,eta696x";
+		charger_name = "primary_chg";
+		reg = <0x6B>;
+		status = "okay";
+		eta696x_otg_vbus: otg {
+			regulator-compatible = "eta696x,otg-vbus";
+			regulator-name = "usb-otg-vbus";
+		};
+	};
 };
 
 &mt_charger {
-    charger = <&mt6370_pmu>;
+    charger = <&eta696x_chg>;
+    //charger = <&mt6370_pmu>;
     bootmode = <&chosen>;
 };
 
@@ -811,15 +793,11 @@
 };
 
 &extcon_usb {
-     typeotg_en-gpios = <&pio 159 0>;
+     id-gpios = <&pio 41 0x0>;
+     drvbus-gpios = <&pio 159 0x0>;
+     //typeotg_en-gpios = <&pio 159 0>;
      status = "okay";
 };
-
-/*
-&extcon_usb {
-    id-gpios = <&pio 41 0x0>;
-    status = "okay";
-};*/
 
 &u2port0 {
     mediatek,eye-src = <5>; /* 0~7 */
