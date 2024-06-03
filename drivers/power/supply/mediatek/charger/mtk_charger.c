@@ -3965,11 +3965,6 @@ static int mtk_charger_probe(struct platform_device *pdev)
 
 	info->sw_jeita.error_recovery_flag = true;
 
-//IPF460_UX30 add begin
-#if defined(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT)
-	charging_diso_init(&DISO_data);
-#endif
-//IPF460_UX30 add end
 
 	mtk_charger_init_timer(info);
 	info->is_pdc_run = false;
