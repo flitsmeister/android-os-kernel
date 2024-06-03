@@ -1351,6 +1351,11 @@ static ssize_t store_UI_SOC(
 	return size;
 }
 
+int drivers_ui_soc_for_contorl_charger(void)
+{
+	return gm.ui_soc;
+}
+
 static DEVICE_ATTR(UI_SOC, 0664, show_UI_SOC,
 		   store_UI_SOC);
 

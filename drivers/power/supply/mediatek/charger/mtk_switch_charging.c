@@ -269,7 +269,8 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 					info->data.usb_charger_current;
 		}
 	} else if (info->chr_type == NONSTANDARD_CHARGER) {
-		pdata->input_current_limit = (800000 + info->data.non_std_ac_charger_current);//leewin add 800mA
+		pdata->input_current_limit = (800000 +
+				info->data.non_std_ac_charger_current);
 		pdata->charging_current_limit =
 				info->data.non_std_ac_charger_current;
 	} else if (info->chr_type == STANDARD_CHARGER) {
@@ -751,10 +752,16 @@ static int mtk_switch_charging_current(struct charger_manager *info)
 	return 0;
 }
 
+
+extern int g_isnot_first;
+extern int drivers_ui_soc_for_contorl_charger(void);
+
+
 static int mtk_switch_charging_run(struct charger_manager *info)
 {
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 	int ret = 0;
+	bool chg_done = false;
 
 	chr_err("%s [%d %d], timer=%d\n", __func__, swchgalg->state,
 		info->pd_type,
@@ -772,6 +779,31 @@ static int mtk_switch_charging_run(struct charger_manager *info)
 		if (mtk_pe50_is_ready(info))
 			mtk_pe40_end(info, 4, true);
 	}
+
+
+	charger_dev_is_charging_done(info->chg1_dev, &chg_done);
+	chr_err("%s chg_done:%d, g_isnot_first:%d,ui_soc:%d\n",__func__, chg_done, g_isnot_first, drivers_ui_soc_for_contorl_charger());
+	if((chg_done == true) && (g_isnot_first == 0) )
+	{
+		chr_info( "%s %d stop charging\n",__func__,__LINE__);
+		mtk_switch_charging_do_charging(info, false);
+		g_isnot_first = 1;
+	}
+
+	if((drivers_ui_soc_for_contorl_charger() >= 75) && (g_isnot_first == 1) )
+	{
+		chr_info( "%s %d stop charging\n",__func__,__LINE__);
+		mtk_switch_charging_do_charging(info, false);
+	}
+
+	if((drivers_ui_soc_for_contorl_charger() < 75) && (g_isnot_first == 1) )
+	{
+		chr_info( "%s %d start charging\n",__func__,__LINE__);
+		swchgalg->state = CHR_CC;
+		swchg_turn_on_charging(info);
+		g_isnot_first = 0;
+	}
+
 
 	do {
 		switch (swchgalg->state) {
