@@ -1451,7 +1451,8 @@ const char *buf, size_t count)
 
 static ssize_t read_dram_data_rate_show(struct device_driver *driver, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "DRAM data rate = %d\n",
+	//return snprintf(buf, PAGE_SIZE, "DRAM data rate = %d\n",
+	return snprintf(buf, PAGE_SIZE, "%d\n",
 	get_dram_data_rate());
 }
 
