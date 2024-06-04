@@ -36,7 +36,7 @@
 			ichg = <2000000>;	/* uA */
 			aicr = <500000>;	/* uA */
 			mivr = <4400000>;	/* uV */
-			cv = <4350000>;		/* uA */
+			cv = <4250000>;		/* uA */
 			ieoc = <200000>;	/* uA */
 			safety_timer = <12>;	/* hour */
 			dc_wdt = <4000000>;	/* us */
@@ -174,7 +174,7 @@
 							/* 1ms, 2ms, 5ms */
 
 			/* we have 11 bit resolution, quantize in driver */
-			mt,max_bled_brightness = <2047>; /* maximum 2047 */
+			mt,max_bled_brightness = <1400>; /* maximum 2047 */
 
 			mt,bled_curr_scale = <0>;	/* 0: 30mA, 1: 22.5mA */
 							/* 2: 20mA, 3: 17.5mA */

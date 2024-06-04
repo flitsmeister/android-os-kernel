@@ -975,6 +975,10 @@ extern int get_shutdown_cond_flag(void);
 /* end mtk_power_misc.c */
 
 /* mtk_battery.c */
+#if defined(CONFIG_CW2015_SUPPORT)
+extern int g_cw2015_capacity;
+extern int g_cw2015_vol;
+#endif
 extern bool is_battery_init_done(void);
 extern int force_get_tbat(bool update);
 extern int bat_get_debug_level(void);

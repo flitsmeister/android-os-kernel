@@ -824,6 +824,14 @@ config CHARGER_BQ25601
 	  It depends on
 	  the config MTK_CHARGER.
 
+config CW2015_SUPPORT
+	bool "CW2015_SUPPORT"
+	help
+	  This is to enable MediaTek supports to CW2015.
+	  It depends on config MTK_SMART_BATTERY
+	  and config MTK_SWCHR_SUPPORT
+	  Set to Yes if CW2015 is used.
+
 config CUSTOM_BATTERY_EXTERNAL_CHANNEL
 	bool "customer external gauge test"
 	depends on MTK_PMIC_CHIP_MT6359P

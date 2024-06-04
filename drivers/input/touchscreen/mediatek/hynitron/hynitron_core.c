@@ -1794,7 +1794,7 @@ static void hyn_suspend(struct device *h)
 
 	hyn_enter_deep_sleep();
 #else //getsure resume
-	tpd_suspend_getsure_enable=0;
+	tpd_suspend_getsure_enable=1;
 	tpd_suspend_geture_count =0;
 	tpd_suspend_getsure_report_done=0;
 	tpd_suspend_down_state=0;
