@@ -64,7 +64,7 @@
  *
 */
  
-#define HYN_EN_AUTO_UPDATE                      0
+#define HYN_EN_AUTO_UPDATE                      1
 #define HYN_EN_AUTO_UPDATE_CST0xxSE             0
 #define HYN_EN_AUTO_UPDATE_CST0xx               0
 #define HYN_EN_AUTO_UPDATE_CST1xx               0
@@ -72,7 +72,7 @@
 #define HYN_EN_AUTO_UPDATE_CST2xx               0
 #define HYN_EN_AUTO_UPDATE_CST2xxSE             0
 #define HYN_EN_AUTO_UPDATE_CST3xx               0
-#define HYN_EN_AUTO_UPDATE_CST3240              0
+#define HYN_EN_AUTO_UPDATE_CST3240              1
 #define HYN_EN_AUTO_UPDATE_CST3xxSE             0
 #define HYN_EN_AUTO_UPDATE_CST6xx				0
 #define HYN_EN_AUTO_UPDATE_CST644K              0

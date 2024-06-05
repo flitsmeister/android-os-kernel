@@ -52,7 +52,7 @@ obj-$(CONFIG_MTK_PUMP_EXPRESS_40_SUPPORT) += mtk_pe4.o mtk_pe4_hal.o
 obj-$(CONFIG_CHARGER_MT6357) += mt6357-pulse-charger.o
 obj-$(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT) += dc_usb_charge/
 endif
-
+obj-$(CONFIG_CW2015_SUPPORT) += cw2015_fuel_gauge.o
 
 power_supply-y				:= power_supply_core.o
 power_supply-$(CONFIG_SYSFS)		+= power_supply_sysfs.o

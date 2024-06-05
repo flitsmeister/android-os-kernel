@@ -1410,8 +1410,9 @@ static unsigned int charging_hw_init(void)
 	eta696x_set_wdt_rst(0x1);	/* Kick watchdog */
 	eta696x_set_sys_min(0x5);	/* Minimum system voltage 3.5V */
 	eta696x_set_iprechg(0x8);	/* Precharge current 540mA */
+	eta696x_set_iterm(0x0);	/* Termination current 120mA */
 	//eta696x_set_iterm(0x2);	/* Termination current 180mA */
-	eta696x_set_iterm(0x6);	/* Termination current 420mA */
+	//eta696x_set_iterm(0x6);	/* Termination current 420mA */
 	eta696x_set_vreg(0xb);	/* VREG 4.2V */
 	eta696x_set_pfm(0x0);//enable pfm
 	eta696x_set_rdson(0x0);     /*close rdson*/

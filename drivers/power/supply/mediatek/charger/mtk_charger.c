@@ -1804,6 +1804,8 @@ void mtk_charger_int_handler(void)
 	_wake_up_charger(pinfo);
 }
 
+int g_isnot_first = 0;
+
 static int mtk_charger_plug_in(struct charger_manager *info,
 				enum charger_type chr_type)
 {
@@ -1832,8 +1834,9 @@ static int mtk_charger_plug_out(struct charger_manager *info)
 {
 	struct charger_data *pdata1 = &info->chg1_data;
 	struct charger_data *pdata2 = &info->chg2_data;
+	g_isnot_first = 0;
 
-	chr_err("%s\n", __func__);
+	chr_err("%s g_isnot_first:%d\n", __func__,g_isnot_first);
 	info->chr_type = CHARGER_UNKNOWN;
 	info->charger_thread_polling = false;
 	info->pd_reset = false;

@@ -486,7 +486,11 @@ static int battery_get_property(struct power_supply *psy,
 		if (gm.fixed_uisoc != 0xffff)
 			val->intval = gm.fixed_uisoc;
 		else
+	#if defined(CONFIG_CW2015_SUPPORT)
+			val->intval = g_cw2015_capacity;
+	#else
 			val->intval = data->BAT_CAPACITY;
+	#endif
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		b_ischarging = gauge_get_current(&fgcurrent);
@@ -509,7 +513,12 @@ static int battery_get_property(struct power_supply *psy,
 			* 1000 / 100;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+	#if defined(CONFIG_CW2015_SUPPORT)
+		val->intval = g_cw2015_vol * 1000;
+		pr_debug("--------g_cw2015_vol val->intval=%d\n-------",val->intval);
+	#else
 		val->intval = data->BAT_batt_vol * 1000;
+	#endif
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = gm.tbat_precise;
@@ -1349,6 +1358,15 @@ static ssize_t store_UI_SOC(
 	}
 
 	return size;
+}
+
+int drivers_ui_soc_for_contorl_charger(void)
+{
+#if defined(CONFIG_CW2015_SUPPORT)
+		return g_cw2015_capacity;
+#else
+		return gm.ui_soc;
+#endif	
 }
 
 static DEVICE_ATTR(UI_SOC, 0664, show_UI_SOC,

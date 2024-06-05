@@ -228,6 +228,11 @@
         dev_index = < 3 >;
         status = "okay";
     };
+
+	cw2015_fuel: cw2015{
+		compatible = "cellwise,cw2015";
+		reg = <0x62>;
+	};
 };
 /* AWINIC AW87390 Smart PA End */
 
