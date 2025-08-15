@@ -1,0 +1,1 @@
+obj-y           += aw_bin_parse.o aw9610x.o

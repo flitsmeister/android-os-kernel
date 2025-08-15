@@ -1,0 +1,1811 @@
+/*
+ * HDMI support
+ *
+ * Copyright (C) 2013 ITE Tech. Inc.
+ * Author: Hermes Wu <hermes.wu@ite.com.tw>
+ *
+ * HDMI TX driver for IT66121
+ *
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+/* #include "hdmitx.h" */
+#ifdef SUPPORT_CEC
+#include "hdmitx_cec.h"
+#endif
+#include <linux/debugfs.h>
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI
+#include <linux/regulator/consumer.h>
+#endif
+#include "debug_hdmi.h"
+#include "hdmi_drv.h"
+//#include "hdmitx_drv.h"
+//#include "hdmitx_sys.h"
+//#include "itx_typedef.h"
+#include <linux/delay.h>
+#include <linux/i2c.h>
+#include <linux/input.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/kobject.h>
+#include <linux/miscdevice.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
+#include <linux/workqueue.h>
+/* #include <linux/earlysuspend.h> */
+#include <linux/atomic.h>
+#include <linux/bitops.h>
+#include <linux/byteorder/generic.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/kernel.h>
+#include <linux/kthread.h>
+#include <linux/module.h>
+#include <linux/platform_device.h>
+/*#include <linux/sched.h>*/
+#include <linux/time.h>
+/* #include <linux/rtpm_prio.h> */
+#include <linux/completion.h>
+#include <linux/dma-mapping.h>
+#include <linux/fs.h>
+#include <linux/reboot.h>
+#include <linux/string.h>
+#include <linux/syscalls.h>
+#include <linux/vmalloc.h>
+
+#include <linux/clk.h>
+#include <linux/gpio.h>
+#include <linux/of_address.h>
+#include <linux/of_gpio.h>
+#include <linux/of_irq.h>
+#include <linux/of_platform.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+/*#include <mt-plat/mt_gpio.h>*/
+#include <mach/upmu_hw.h>
+#include <mach/upmu_sw.h>
+#include <mt-plat/upmu_common.h>
+
+//#include "hdmitx.h"
+/* #include <cust_eint.h> */
+/* #include "cust_gpio_usage.h" */
+/* #include "mach/eint.h" */
+/* #include "mach/irqs.h" */
+
+/* #include <mach/devs.h> */
+/* #include <mach/mt_typedefs.h> */
+/* #include <mach/mt_gpio.h> */
+/* #include <mach/mt_pm_ldo.h> */
+#include <uapi/linux/sched/types.h>
+/*ms7210*/
+#include "ms7210.h"
+#include "ms7210_typedef.h"
+
+#define FALLING_EDGE_TRIGGER
+
+//add by kzhkzh 20220819
+#include <linux/fb.h>
+#include <linux/notifier.h>
+static struct notifier_block roco_fb_notifier;
+//add by kzhkzh 20220819
+
+extern int ite66121_pmic_power_off(void);
+
+#define MSCOUNT 1000
+#define LOADING_UPDATE_TIMEOUT (3000 / 32) /* 3sec */
+/* unsigned short u8msTimer = 0 ; */
+/* unsigned short TimerServF = TRUE ; */
+
+/* //////////////////////////////////////////////////////////////////// */
+/* Authentication status */
+/* //////////////////////////////////////////////////////////////////// */
+
+/* #define TIMEOUT_WAIT_AUTH MS(2000) */
+
+#ifdef CONFIG_HDMI_SET_SPEAKER_OFF
+extern void mt8168_speaker_switch(unsigned int sw);
+#endif
+
+/* I2C Relate Definitions */
+unsigned int sink_support_resolution = 0;
+static struct i2c_client *it66121_i2c_client;
+static struct timer_list r_hdmi_timer;
+
+
+struct regulator *hdmi_vcn33, *hdmi_vcn18, *hdmi_vrf12, *hdmi_vsim1;
+unsigned char hdmi_use_pmic_supply;
+
+
+#ifdef PCADR
+#define IT66121_plus 0x02
+/* Define it66121's I2c slave Address of all pages
+ * by the status of PCADR pin.
+ */
+#else
+#define IT66121_plus 0x00
+/* Define it66121's I2c Address of all pages by the status of PCADR pin. */
+#endif
+
+/* I2C address */
+#define _80MHz 80000000
+#define HDMI_TX_I2C_SLAVE_ADDR 0x98
+#define CEC_I2C_SLAVE_ADDR 0x9C
+
+/*I2C Device name */
+#define DEVICE_NAME "it66121"
+
+#define MAX_TRANSACTION_LENGTH 8
+
+static int hdmi_ite_probe(struct i2c_client *client,
+			  const struct i2c_device_id *id);
+
+struct HDMI_UTIL_FUNCS hdmi_util = {0};
+unsigned char hdmi_powerenable = 0xff;
+static unsigned char hdmi_find_chip = 0xff;
+static struct pinctrl *hdmi_pinctrl;
+static struct pinctrl_state *pins_hdmi_func;
+static struct pinctrl_state *pins_hdmi_gpio;
+/* static struct pinctrl_state *pins_hdmi_rst_hi;
+static struct pinctrl_state *pins_hdmi_rst_lo;
+static struct pinctrl_state *pins_hdmi_rst_disable; */
+#ifdef ROCO_USE_REGULATOR_SUPPOR_HDMI
+unsigned int hdmi_reset_pin;
+#endif
+unsigned int hdmi_power_pin;
+
+int it66121_i2c_read_byte_16addr(u16 addr, u8 *data);
+int it66121_i2c_read_byte_16addr(u16 addr, u8 *data);
+static DVIN_CONFIG_T g_dvin_config = { DVIN_CS_MODE_RGB, DVIN_BW_MODE_8_10_12BIT, DVIN_SQ_MODE_NONSEQ, DVIN_DR_MODE_DDR, DVIN_SY_MODE_HSVSDE };
+static VIDEOTIMING_T g_hdmitx_timing;
+static HDMI_CONFIG_T g_hdmitx_infoframe;
+unsigned char HPDStatus = FALSE;
+static int initcount=0;
+/*
+ *static const struct i2c_device_id hdmi_ite_id[] = {{DEVICE_NAME, 0}, {} };
+ *
+ *static struct i2c_driver hdmi_ite_i2c_driver = {
+ *	.probe = hdmi_ite_probe,
+ *	.remove = NULL,
+ *	.driver = {
+ *
+ *			.name = DEVICE_NAME,
+ *		},
+ *	.id_table = hdmi_ite_id,
+ *};
+ */
+	static const struct i2c_device_id hdmi_ite_id[] = {
+		{DEVICE_NAME, 0},
+		{},
+	};
+	MODULE_DEVICE_TABLE(i2c, hdmi_ite_id);
+
+	static const struct of_device_id hdmi_ite_of_match[] = {
+		{.compatible = "ite,it66121-i2c"},
+		{.compatible = "ite,it6620-basic-i2c"},
+		{.compatible = "ite,i2c_it66121"},
+		{.compatible = "ite,it6620-cap-i2c"},
+		{},
+	};
+	MODULE_DEVICE_TABLE(of, hdmi_ite_of_match);
+
+	static struct i2c_driver hdmi_ite_i2c_driver = {
+		.probe = hdmi_ite_probe,
+		.remove = NULL,
+		.driver = { .name = DEVICE_NAME,
+					.of_match_table = hdmi_ite_of_match,
+					.owner = THIS_MODULE,
+		},
+		.id_table = hdmi_ite_id,
+	};
+
+/*
+ *static struct i2c_board_info it66121_i2c_hdmi __initdata = {I2C_BOARD_INFO(
+ *	DEVICE_NAME, (HDMI_TX_I2C_SLAVE_ADDR >> 1) + IT66121_plus)};
+ */
+
+/* static struct it66121_i2c_data *obj_i2c_data = NULL; */
+
+/*Declare and definition for a hdmi kthread, this thread is used to check the
+ * HDMI Status
+ */
+static struct task_struct *hdmi_timer_task;
+wait_queue_head_t hdmi_timer_wq;
+atomic_t hdmi_timer_event = ATOMIC_INIT(0);
+
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI
+struct regulator *hdmi_vcn33, *hdmi_vcn18, *hdmi_vrf12, *hdmi_vsim1;
+#endif
+
+/*
+ *static int match_id(const struct i2c_device_id *id,
+ *		    const struct i2c_client *client)
+ *{
+ *	if (strcmp(client->name, id->name) == 0)
+ *		return true;
+ *
+ *	return false;
+ *}
+ */
+void HDMI_reset(void)
+{
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI	
+	int ret;
+#endif
+	HDMITX_DEBUG_PRINTF("hdmi_ite66121 %s\n", __func__);
+
+	HDMITX_DEBUG_PRINTF(">>HDMI_Reset\n");
+
+#if defined(GPIO_HDMI_9024_RESET)
+
+	HDMITX_DEBUG_PRINTF(">>Pull Down Reset Pin\n");
+	mt_set_gpio_mode(GPIO_HDMI_9024_RESET, GPIO_MODE_00);
+	mt_set_gpio_dir(GPIO_HDMI_9024_RESET, GPIO_DIR_OUT);
+	mt_set_gpio_out(GPIO_HDMI_9024_RESET, GPIO_OUT_ZERO);
+
+	msleep(100);
+
+	mt_set_gpio_mode(GPIO_HDMI_9024_RESET, GPIO_MODE_00);
+	mt_set_gpio_dir(GPIO_HDMI_9024_RESET, GPIO_DIR_OUT);
+	mt_set_gpio_out(GPIO_HDMI_9024_RESET, GPIO_OUT_ONE);
+
+	HDMITX_DEBUG_PRINTF("<<Pull Up Reset Pin\n");
+#else
+	gpio_direction_output(hdmi_reset_pin, 0);
+	msleep(20);
+	//pinctrl_select_state(hdmi_pinctrl, pins_hdmi_rst_lo);
+	//msleep(10);
+	gpio_direction_output(hdmi_reset_pin, 1);
+	//pinctrl_select_state(hdmi_pinctrl, pins_hdmi_rst_hi);
+	msleep(20);
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI
+	ret = regulator_enable(hdmi_vsim1);
+	if (ret != 0)
+		HDMITX_DEBUG_PRINTF("hdmi +5V regolator error\n");
+#endif	
+#endif
+	HDMITX_DEBUG_PRINTF("<<HDMI_Reset\n");
+}
+
+void mculib_delay_ms(u8 u8_ms)
+{
+	mdelay(u8_ms);
+}
+EXPORT_SYMBOL_GPL(mculib_delay_ms);
+
+void mculib_delay_us(u8 u8_us)
+{
+	udelay(u8_us);
+}
+void mculib_i2c_set_speed(UINT8 u8speed)
+{
+}
+UINT8 mculib_i2c_read_8bidx8bval(UINT8 u8_address, UINT8 u8_index)
+{
+	return 0;
+}
+BOOL mculib_i2c_write_8bidx8bval(UINT8 u8_address, UINT8 u8_index, UINT8 u8_value)
+{
+	return 0;
+}
+void  mculib_i2c_burstread_8bidx8bval(UINT8 u8_address, UINT8 u8_index, UINT8 u8_length, UINT8 *pu8_value)
+{
+}
+void  mculib_i2c_burstwrite_16bidx8bval(UINT8 u8_address, UINT16 u16_index, UINT16 u16_length, UINT8 *pu8_value)
+{
+}
+BOOL mculib_i2c_write_blank(UINT8 u8_address, UINT8 u8_index)
+{
+	return 0;
+}
+void mculib_i2c_burstread_8bidx8bval_ext(UINT8 u8_address, UINT8 u8_index, UINT8 u8_length)
+{
+}
+void  mculib_i2c_burstread_16bidx8bval(UINT8 u8_address, UINT16 u16_index, UINT16 u16_length, UINT8 *pu8_value)
+{
+}
+
+int it66121_i2c_read_byte_16addr(u16 addr, u8 *data)
+{
+	u8 buf1 = (u8)(addr);
+	u8 buf2 = (u8)(addr >> 8);
+	u8 buf[] = {buf1, buf2};
+	int ret = 0;
+	struct i2c_client *client = it66121_i2c_client;
+	if (hdmi_powerenable == 1) {
+		ret = i2c_master_send(client, (const char *)&buf, sizeof(buf));
+		if (ret < 0) {
+			HDMITX_DEBUG_PRINTF("send command error!!,ret = %d\n",ret);
+			return -EFAULT;
+		}
+		
+		ret = i2c_master_recv(client, (char *)&buf1, 1);
+		if (ret < 0) {
+			HDMITX_DEBUG_PRINTF("reads data error!!\n");
+			return -EFAULT;
+		}
+#if defined(HDMI_I2C_DEBUG)
+		else
+			HDMITX_DEBUG_PRINTF("%s(0x%02X) = %02X\n", __func__, addr, buf);
+#endif
+		*data = buf1;
+		return 0;
+	} else {
+		return 0;
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+EXPORT_SYMBOL_GPL(it66121_i2c_read_byte_16addr);
+/*----------------------------------------------------------------------------*/
+
+int it66121_i2c_write_byte_16addr(u16 addr, u8 data)
+{
+	u8 buf1 = (u8)(addr);
+	u8 buf2 = (u8)(addr >> 8);
+	struct i2c_client *client = it66121_i2c_client;
+	u8 buf[] = {buf1, buf2, data};
+	int ret = 0;
+	if (hdmi_powerenable == 1) {
+		ret = i2c_master_send(client, (const char *)buf, sizeof(buf));
+		if (ret < 0) {
+			HDMITX_DEBUG_PRINTF("send command error!!\n");
+			return -EFAULT;
+		}
+#if defined(HDMI_I2C_DEBUG)
+		else
+			HDMITX_DEBUG_PRINTF("%s(0x%02X)= %02X\n", __func__, addr, data);
+#endif
+		return 0;
+	} else {
+		return 0;
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+EXPORT_SYMBOL_GPL(it66121_i2c_write_byte_16addr);
+/*----------------------------------------------------------------------------*/
+
+UINT8 mculib_i2c_read_16bidx8bval(UINT8 u8_address, UINT16 u16_index)
+{
+	UINT8 u8_value = 0;
+	it66121_i2c_read_byte_16addr(u16_index,&u8_value);
+	return u8_value;
+}
+
+BOOL mculib_i2c_write_16bidx8bval(UINT8 u8_address, UINT16 u16_index, UINT8 u8_value)
+{
+	BOOL ret;
+	ret = it66121_i2c_write_byte_16addr(u16_index,u8_value);
+	return ret;
+}
+
+int it66121_i2c_read_byte(u8 addr, u8 *data)
+{
+	u8 buf;
+	int ret = 0;
+	struct i2c_client *client = it66121_i2c_client;
+	if (hdmi_powerenable == 1) {
+		buf = addr;
+		ret = i2c_master_send(client, (const char *)&buf, 1);
+		if (ret < 0) {
+			HDMITX_DEBUG_PRINTF("send command error!!\n");
+			return -EFAULT;
+		}
+		ret = i2c_master_recv(client, (char *)&buf, 1);
+		if (ret < 0) {
+			HDMITX_DEBUG_PRINTF("reads data error!!\n");
+			return -EFAULT;
+		}
+#if defined(HDMI_I2C_DEBUG)
+		else
+			HDMITX_DEBUG_PRINTF("%s(0x%02X) = %02X\n", __func__, addr, buf);
+#endif
+		*data = buf;
+		return 0;
+	} else {
+		return 0;
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+EXPORT_SYMBOL_GPL(it66121_i2c_read_byte);
+/*----------------------------------------------------------------------------*/
+
+int it66121_i2c_write_byte(u8 addr, u8 data)
+{
+	struct i2c_client *client = it66121_i2c_client;
+	u8 buf[] = {addr, data};
+	int ret = 0;
+	if (hdmi_powerenable == 1) {
+		ret = i2c_master_send(client, (const char *)buf, sizeof(buf));
+		if (ret < 0) {
+			HDMITX_DEBUG_PRINTF("send command error!!\n");
+			return -EFAULT;
+		}
+#if defined(HDMI_I2C_DEBUG)
+		else
+			HDMITX_DEBUG_PRINTF("%s(0x%02X)= %02X\n", __func__, addr, data);
+#endif
+		return 0;
+	} else {
+		return 0;
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+EXPORT_SYMBOL_GPL(it66121_i2c_write_byte);
+/*----------------------------------------------------------------------------*/
+
+int it66121_i2c_read_block(u8 addr, u8 *data, int len)
+{
+	struct i2c_client *client = it66121_i2c_client;
+	u8 beg = addr;
+	struct i2c_msg msgs[2] = {
+		{.addr = client->addr, .flags = 0, .len = 1, .buf = &beg},
+		{
+			.addr = client->addr,
+			.flags = I2C_M_RD,
+			.len = len,
+			.buf = data,
+		} };
+	int err;
+
+	if (len == 1)
+		return it66121_i2c_read_byte(addr, data);
+
+	if (!client) {
+		return -EINVAL;
+	} else if (len > MAX_TRANSACTION_LENGTH) {
+		HDMITX_DEBUG_PRINTF(" length %d exceeds %d\n", len,
+			    MAX_TRANSACTION_LENGTH);
+		return -EINVAL;
+	}
+
+	err = i2c_transfer(client->adapter, msgs, ARRAY_SIZE(msgs));
+	if (err != 2) {
+		HDMITX_DEBUG_PRINTF("i2c_transfer error: (%d %p %d) %d\n", addr, data,
+			    len, err);
+		err = -EIO;
+	} else {
+		err = 0; /*no error */
+	}
+	return err;
+}
+
+/*----------------------------------------------------------------------------*/
+EXPORT_SYMBOL_GPL(it66121_i2c_read_block);
+/*----------------------------------------------------------------------------*/
+
+int it66121_i2c_write_block(u8 addr, u8 *data, int len)
+{
+	/*because address also occupies one byte, the maximum length for write
+	 * is 7 bytes
+	 */
+	int err, idx, num;
+	char buf[MAX_TRANSACTION_LENGTH];
+	struct i2c_client *client = it66121_i2c_client;
+
+	if (!client) {
+		return -EINVAL;
+	} else if (len >= MAX_TRANSACTION_LENGTH) {
+		HDMITX_DEBUG_PRINTF(" length %d exceeds %d\n", len,
+			    MAX_TRANSACTION_LENGTH);
+		return -EINVAL;
+	}
+
+	num = 0;
+	buf[num++] = addr;
+	for (idx = 0; idx < len; idx++)
+		buf[num++] = data[idx];
+
+	err = i2c_master_send(client, buf, num);
+	if (err < 0) {
+		HDMITX_DEBUG_PRINTF("send command error!!\n");
+		return -EFAULT;
+	}
+
+	err = 0; /*no error */
+
+	return err;
+}
+
+/*----------------------------------------------------------------------------*/
+EXPORT_SYMBOL_GPL(it66121_i2c_write_block);
+/*----------------------------------------------------------------------------*/
+
+/* /it66121 power on */
+/* Description: */
+/*  */
+#if 0
+int it66121_power_on(void)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s\n", __func__);
+
+	if (hdmi_powerenable == 1) {
+		HDMITX_DEBUG_PRINTF("[hdmi]already power on, return\n");
+		return 0;
+	}
+	hdmi_powerenable = 1;
+	ite66121_pmic_power_on();
+
+	/********This leave for mt6592 to power on it66121 ************/
+	/* To Do */
+	/* Reset The it66121 IC */
+	HDMI_reset();
+	msleep(20);
+	/* This leave for it66121 internal init function */
+	InitHDMITX_Variable();
+	InitHDMITX();
+	HDMITX_ChangeDisplayOption(HDMI_720p60, HDMI_RGB444);
+	mod_timer(&r_hdmi_timer, jiffies + 1000 / (1000 / HZ));
+
+/* Enable Interrupt of it66121 */
+#if defined(CUST_EINT_EINT_HDMI_HPD_NUM)
+	mt_eint_unmask(CUST_EINT_EINT_HDMI_HPD_NUM);
+#endif
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+	return 0;
+}
+#endif
+//#if CONFIG_HDMI_MS7210_SUPPORT
+int MS7210_pmic_power_on(void)
+{
+	int ret;
+
+	if (hdmi_find_chip == 0) return -1;
+
+	pinctrl_select_state(hdmi_pinctrl, pins_hdmi_func);
+	gpio_direction_output(hdmi_power_pin, 1);
+//	gpio_direction_output(hdmi_5v_pin, 1);
+
+	if (hdmi_use_pmic_supply) {
+		ret = regulator_enable(hdmi_vrf12);
+		ret = regulator_enable(hdmi_vcn18);
+		ret = regulator_enable(hdmi_vcn33);
+		if (ret != 0)
+			HDMITX_DEBUG_PRINTF("hdmi regolator error\n");
+	}
+
+	HDMITX_DEBUG_PRINTF("%s\n", __func__);
+	return 1;
+}
+int MS7210_power_on(void)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s\n", __func__);
+	MS7210_TRACE();
+	
+	if (hdmi_find_chip == 0) return -1;
+
+	initcount = 0;
+	if (hdmi_powerenable == 1) {
+		HDMITX_DEBUG_PRINTF("[hdmi]already power on, return\n");
+		return 0;
+	}
+	hdmi_powerenable = 1;
+	MS7210_pmic_power_on();
+
+	/********This leave for mt6592 to power on it66121 ************/
+	/* To Do */
+	/* Reset The it66121 IC */
+	HDMI_reset();
+	msleep(100);
+	/* This leave for it66121 internal init function */
+	g_hdmitx_timing = g_arrTimingTable[VFMT_CEA_04_1280x720P_60HZ];
+	ms7210_dvin_timing_config(&g_dvin_config, &g_hdmitx_timing, &g_hdmitx_infoframe);
+	ms7210_dvin_video_config(TRUE);
+	g_hdmitx_infoframe.u8_hdmi_flag = TRUE;
+	g_hdmitx_infoframe.u8_color_space = HDMI_RGB;
+	g_hdmitx_infoframe.u8_color_depth = 0;
+	ms7210_hdmitx_output_config(&g_hdmitx_infoframe);
+	mod_timer(&r_hdmi_timer, jiffies + 1000 / (1000 / HZ));
+
+	/* Enable Interrupt of it66121 */
+#if defined(CUST_EINT_EINT_HDMI_HPD_NUM)
+	mt_eint_unmask(CUST_EINT_EINT_HDMI_HPD_NUM);
+#endif
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+	return 0;
+}
+//#endif
+enum HDMI_STATE it66121_get_state(void)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	if(HPDStatus)
+		HDMITX_DEBUG_PRINTF("ms7210 hdmi hpd status TRUE\n");
+	else
+		HDMITX_DEBUG_PRINTF("ms7210 hdmi hpd status FAILE\n");
+	//if (ms7210_hdmitx_hpd_detect())
+	if (HPDStatus)
+		return HDMI_STATE_ACTIVE;
+	else
+		return HDMI_STATE_NO_DEVICE;
+
+	/* Leave for it66121  */
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+}
+
+void HDMITX_DEBUG_PRINTF_enable(bool enable)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	/* Leave for it66121  */
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+}
+
+static void it66121_power_down(void)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	if (hdmi_powerenable == 0 || hdmi_find_chip == 0) {
+		HDMITX_DEBUG_PRINTF("[hdmi]already power off, return\n");
+		return;
+	}
+	hdmi_powerenable = 0;
+
+	del_timer_sync(&r_hdmi_timer);
+
+	/* leave for it66121 internal power down */
+	ite66121_pmic_power_off();
+
+//	pinctrl_select_state(hdmi_pinctrl, pins_hdmi_rst_disable);
+
+	it66121_FUNC();
+	/* HDMITX_DisableVideoOutput(); */
+	/* HDMITX_PowerDown(); */
+
+	/* Leave for mt6592 to power down it66121 */
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+}
+#if 0
+static void _it66121_irq_handler(void)
+{
+	HDMITX_DEBUG_PRINTF("it66121 irq\n");
+#if defined(CUST_EINT_EINT_HDMI_HPD_NUM)
+	mt_eint_mask(CUST_EINT_EINT_HDMI_HPD_NUM);
+#endif
+
+	/*Disable IT66121 HPD*/
+	/*it66121_i2c_write_byte(0x09,0x01);*/
+
+	atomic_set(&hdmi_timer_event, 1);
+	wake_up_interruptible(&hdmi_timer_wq);
+}
+#endif
+/* Just For Test */
+void HDMITX_DevLoopProc_Test(void)
+{
+	HDMITX_DEBUG_PRINTF(">> %s\n", __func__);
+}
+void hdmi_invoke_cable_callbacks(enum HDMI_STATE state);
+static int hdmi_timer_kthread(void *data)
+{
+//#ifdef CONFIG_HDMI_MS7210_SUPPORT
+	BOOL hpd_tmp = FALSE;
+	DVIN_TIMING_DET_T inputtiming;
+//#endif
+	struct sched_param param = {.sched_priority = 94};
+	/* RTPM_PRIO_SCRN_UPDATE */
+
+	//unsigned char value;
+	sched_setscheduler(current, SCHED_RR, &param);
+
+	for (;;) {
+		wait_event_interruptible(hdmi_timer_wq,
+					 atomic_read(&hdmi_timer_event));
+		atomic_set(&hdmi_timer_event, 0);
+		/* HDMITX_DevLoopProc_Test(); */
+		if (hdmi_powerenable == 1)
+		{
+			#if 1
+			HPDStatus = ms7210_hdmitx_hpd_detect();
+			if (HPDStatus != hpd_tmp)
+			{
+				if (HPDStatus){
+					hdmi_invoke_cable_callbacks(HDMI_STATE_ACTIVE);
+				}
+				else{
+					hdmi_invoke_cable_callbacks(HDMI_STATE_NO_DEVICE);
+				#ifdef CONFIG_HDMI_SET_SPEAKER_OFF
+					mt8168_speaker_switch(1);
+				#endif
+				}
+				hpd_tmp = HPDStatus;
+			}
+			#endif
+			if(!initcount)
+			{
+				ms7210_init_test();
+				initcount=1;
+			}
+//			#endif
+			//HDMITX_DevLoopProc();
+//			#ifdef CONFIG_HDMI_MS7210_SUPPORT
+			ms7210_dvin_timing_get(&inputtiming);
+			HDMITX_DEBUG_PRINTF("ms7210  htotal = %d, vtotal = %d, hactive = %d, pixclk = %d\n",inputtiming.u16_htotal,inputtiming.u16_vtotal,inputtiming.u16_hactive,inputtiming.u16_pixclk);
+			ms7210_media_service();
+//#endif
+			#if 0
+			if(regflag == 1 && inputtiming.u16_htotal > 400 && inputtiming.u16_vtotal > 400 && inputtiming.u16_hactive > 400 && inputtiming.u16_pixclk > 400)
+				count++;
+			
+			mculib_delay_ms(100);
+			if(count < 5)
+				ms7210_media_service();
+			if(count >= 5 && regflag == 1)
+			{
+				regflag = 0;
+				mculib_i2c_write_16bidx8bval(0x56,0x1203,0x33);
+				mculib_i2c_write_16bidx8bval(0x56,0x1204,0x03);
+			}
+			#endif
+		}
+
+		#if 0
+		it66121_i2c_read_byte_16addr(0x1000,&value);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg1000 33333= %02X\n",value);
+		it66121_i2c_read_byte_16addr(0x1001,&value);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg1001 33333= %02X\n",value);
+		
+		
+		
+		
+		value=mculib_i2c_read_16bidx8bval(0x56,0x0000);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg0 = %02X\n",value);
+		value=mculib_i2c_read_16bidx8bval(0x56,0x0001);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg1 = %02X\n",value);
+		value=mculib_i2c_read_16bidx8bval(0x56,0x0002);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg2 = %02X\n",value);
+		value=mculib_i2c_read_16bidx8bval(0x56,0x1000);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg1000 = %02X\n",value);
+		value=mculib_i2c_read_16bidx8bval(0x56,0x1001);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg1001 = %02X\n",value);
+		
+		mculib_i2c_write_16bidx8bval(0x56,0x0003,0x5A);
+		value=mculib_i2c_read_16bidx8bval(0x56,0x0003);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg3 = %02X\n",value);
+		
+		mculib_i2c_write_16bidx8bval(0x56,0x1000,0x5A);
+		value=mculib_i2c_read_16bidx8bval(0x56,0x1000);
+		HDMITX_DEBUG_PRINTF("ms7210 chip reg1000 = %02X\n",value);
+		#endif
+		
+#if defined(CUST_EINT_EINT_HDMI_HPD_NUM)
+		mt_eint_unmask(CUST_EINT_EINT_HDMI_HPD_NUM);
+#endif
+
+		//HDMITX_WriteI2C_Byte(REG_TX_INT_MASK1, 0x03);
+
+		if (kthread_should_stop())
+			break;
+	}
+
+	return 0;
+}
+
+void it66121_dump(void)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	/* Leave for it66121  */
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+}
+
+static int it66121_audio_enable(bool enable)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	/* Leave for it66121  */
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+
+	return 0;
+}
+
+static int it66121_video_enable(bool enable)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	/* Leave for it66121  */
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+
+	return 0;
+}
+
+static int it66121_audio_config(enum HDMI_AUDIO_FORMAT aformat, int bitWidth)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+	/* Leave for it66121  */
+	dump_stack();
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+
+	return 0;
+}
+
+#if 0
+static int it66121_video_config(enum HDMI_VIDEO_RESOLUTION vformat,
+				enum HDMI_VIDEO_INPUT_FORMAT vin, int vout)
+{
+
+	HDMI_Video_Type it66121_video_type = HDMI_480i60_16x9;
+
+	HDMITX_DEBUG_PRINTF(">>> %s vformat:0x%x\n", __func__, vformat);
+
+	if (vformat == HDMI_VIDEO_720x480p_60Hz)
+		it66121_video_type = HDMI_480p60;
+	else if (vformat == HDMI_VIDEO_1280x720p_60Hz)
+		it66121_video_type = HDMI_720p60;
+	else if (vformat == HDMI_VIDEO_1920x1080p_30Hz)
+		it66121_video_type = HDMI_1080p30;
+	else {
+		HDMITX_DEBUG_PRINTF("error:sii9024_video_config vformat=%d\n", vformat);
+		it66121_video_type = HDMI_720p60;
+	}
+
+	HDMITX_ChangeDisplayOption(it66121_video_type, HDMI_RGB444);
+	/*mutex_lock(&mt66121_mutex_lock);*/
+	/*HDMITX_SetOutput();*/
+	/*mutex_unlock(&mt66121_mutex_lock);*/
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+
+	return 0;
+}
+#endif
+//#ifdef CONFIG_HDMI_MS7210_SUPPORT
+static int MS7210_video_config(enum HDMI_VIDEO_RESOLUTION vformat, enum HDMI_VIDEO_INPUT_FORMAT vin,
+				int vout)
+{
+
+	MS7210_VIDEOFORMAT_E MS7210_video_type = VFMT_CEA_NULL;
+
+	MS7210_TRACE();
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	if (vformat == HDMI_VIDEO_720x480p_60Hz)
+		MS7210_video_type = VFMT_CEA_02_720x480P_60HZ;
+	else if (vformat == HDMI_VIDEO_1280x720p_60Hz)
+		MS7210_video_type = VFMT_CEA_04_1280x720P_60HZ;
+	else if (vformat == HDMI_VIDEO_1920x1080p_30Hz)
+		MS7210_video_type = VFMT_CEA_34_1920x1080P_30HZ;
+	else if (vformat == HDMI_VIDEO_1920x1080p_60Hz)
+		MS7210_video_type = VFMT_CEA_16_1920x1080P_60HZ;
+	else {
+		HDMITX_DEBUG_PRINTF("error:sii9024_video_config vformat=%d\n", vformat);
+		MS7210_video_type = VFMT_CEA_04_1280x720P_60HZ;
+	}
+
+	g_hdmitx_timing = g_arrTimingTable[MS7210_video_type];
+	ms7210_dvin_timing_config(&g_dvin_config, &g_hdmitx_timing, &g_hdmitx_infoframe);
+	ms7210_dvin_video_config(TRUE);
+	g_hdmitx_infoframe.u8_hdmi_flag = TRUE;
+	g_hdmitx_infoframe.u8_color_space = HDMI_RGB;
+	g_hdmitx_infoframe.u8_color_depth = 0;
+	ms7210_hdmitx_output_config(&g_hdmitx_infoframe);
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+
+	return 0;
+}
+//#endif
+static void it66121_suspend(void)
+{
+
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+	/* leave for mt6592 operation */
+
+	/*leave for it66121 operation */
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+}
+
+static void it66121_resume(void)
+{
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	/* leave for mt6592 operation */
+
+	/*leave for it66121 operation */
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+}
+
+void MS7210_AppGetEdidInfo(struct _HDMI_EDID_T *pv_get_info)
+{
+	MS7210_TRACE();
+	sink_support_resolution |= SINK_480P | SINK_720P60 | SINK_1080P30;
+	pv_get_info->ui4_ntsc_resolution |= sink_support_resolution;
+	pv_get_info->ui4_pal_resolution |= sink_support_resolution;
+	pv_get_info->ui4_sink_dtd_ntsc_resolution |= sink_support_resolution;
+	pv_get_info->ui4_sink_dtd_pal_resolution |= sink_support_resolution;
+	pv_get_info->ui4_sink_cea_ntsc_resolution |= sink_support_resolution;
+	pv_get_info->ui4_sink_cea_pal_resolution |= sink_support_resolution;
+	pv_get_info->ui4_sink_native_ntsc_resolution |= sink_support_resolution;
+	pv_get_info->ui4_sink_native_pal_resolution |= sink_support_resolution;
+#ifdef CONFIG_HDMI_SET_SPEAKER_OFF
+	mt8168_speaker_switch(0);
+#endif
+}
+
+static void it66121_get_params(struct HDMI_PARAMS *params)
+{
+	enum HDMI_VIDEO_RESOLUTION input_resolution;
+
+	input_resolution = params->init_config.vformat - 2;
+	memset(params, 0, sizeof(struct HDMI_PARAMS));
+
+	HDMITX_DEBUG_PRINTF("%s res = %d\n", __func__, input_resolution);
+
+	switch (input_resolution) {
+	case HDMI_VIDEO_720x480p_60Hz:
+		params->clk_pol = HDMI_POLARITY_FALLING;
+		params->de_pol = HDMI_POLARITY_RISING;
+		params->hsync_pol = HDMI_POLARITY_RISING;
+		params->vsync_pol = HDMI_POLARITY_RISING;
+		params->hsync_pulse_width = 62;
+		params->hsync_back_porch = 60;
+		params->hsync_front_porch = 16;
+		params->vsync_pulse_width = 6;
+		params->vsync_back_porch = 30;
+		params->vsync_front_porch = 9;
+		params->width = 720;
+		params->height = 480;
+		params->input_clock = HDMI_VIDEO_720x480p_60Hz;
+		params->init_config.vformat = HDMI_VIDEO_720x480p_60Hz;
+		break;
+	case HDMI_VIDEO_1280x720p_60Hz:
+		params->clk_pol = HDMI_POLARITY_FALLING;
+		params->de_pol = HDMI_POLARITY_RISING;
+		params->hsync_pol = HDMI_POLARITY_FALLING;
+		params->vsync_pol = HDMI_POLARITY_FALLING;
+		params->hsync_pulse_width = 40;
+		params->hsync_back_porch = 220;
+		params->hsync_front_porch = 110;
+		params->vsync_pulse_width = 5;
+		params->vsync_back_porch = 20;
+		params->vsync_front_porch = 5;
+		params->width = 1280;
+		params->height = 720;
+		params->input_clock = HDMI_VIDEO_1280x720p_60Hz;
+		params->init_config.vformat = HDMI_VIDEO_1280x720p_60Hz;
+		break;
+	case HDMI_VIDEO_1920x1080p_30Hz:
+		params->clk_pol = HDMI_POLARITY_FALLING;
+		params->de_pol = HDMI_POLARITY_RISING;
+		params->hsync_pol = HDMI_POLARITY_FALLING;
+		params->vsync_pol = HDMI_POLARITY_FALLING;
+		params->hsync_pulse_width = 44;
+		params->hsync_back_porch = 148;
+		params->hsync_front_porch = 88;
+		params->vsync_pulse_width = 5;
+		params->vsync_back_porch = 36;
+		params->vsync_front_porch = 4;
+		params->width = 1920;
+		params->height = 1080;
+		params->input_clock = HDMI_VIDEO_1920x1080p_30Hz;
+		params->init_config.vformat = HDMI_VIDEO_1920x1080p_30Hz;
+		break;
+	case HDMI_VIDEO_1920x1080p_60Hz:
+		params->clk_pol = HDMI_POLARITY_FALLING;
+		params->de_pol = HDMI_POLARITY_RISING;
+		params->hsync_pol = HDMI_POLARITY_FALLING;
+		params->vsync_pol = HDMI_POLARITY_FALLING;
+		params->hsync_pulse_width = 44;
+		params->hsync_back_porch = 148;
+		params->hsync_front_porch = 88;
+		params->vsync_pulse_width = 5;
+		params->vsync_back_porch = 36;
+		params->vsync_front_porch = 4;
+		params->width = 1920;
+		params->height = 1080;
+		params->input_clock = HDMI_VIDEO_1920x1080p_60Hz;
+		params->init_config.vformat = HDMI_VIDEO_1920x1080p_60Hz;
+		break;
+	default:
+		HDMITX_DEBUG_PRINTF("Unknown support resolution\n");
+		break;
+	}
+
+	params->init_config.aformat = HDMI_AUDIO_48K_2CH;
+	params->rgb_order = HDMI_COLOR_ORDER_RGB;
+	params->io_driving_current = IO_DRIVING_CURRENT_2MA;
+	params->intermediat_buffer_num = 4;
+	params->output_mode = HDMI_OUTPUT_MODE_LCD_MIRROR;
+	params->is_force_awake = 1;
+	params->is_force_landscape = 1;
+}
+
+static void it66121_set_util_funcs(const struct HDMI_UTIL_FUNCS *util)
+{
+	memcpy(&hdmi_util, util, sizeof(struct HDMI_UTIL_FUNCS));
+}
+
+static int MS7210_init(void)
+{
+	int ret = 0;
+	MS7210_TRACE();
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	if (hdmi_find_chip == 0)  return -1;
+
+	/* HDMI_reset(); */
+/* FOR MS7210 Init */
+	HDMITX_DEBUG_PRINTF("ms7210 chip connect = ", ms7210_chip_connect_detect(0x56));
+    ms7210_dvin_init(&g_dvin_config, 0);
+/* This leave for MT6592 initialize it66121 */
+/* register i2c device */
+	if (ret)
+		HDMITX_DEBUG_PRINTF(KERN_ERR "%s: failed to add it66121 i2c driver\n", __func__);
+
+/* This leave for MT6592 internal initialization */
+
+	HDMITX_DEBUG_PRINTF("<<< %s,\n", __func__);
+	return ret;
+}
+
+#if 0
+static int hdmi_i2c_probe(struct i2c_client *client,
+		const struct i2c_device_id *id)
+{
+	int err = 0, ret = -1;
+	u8 ids[4] = { 0 };
+	struct it66121_i2c_data *obj;
+
+	HDMITX_DEBUG_PRINTF("MediaTek HDMI i2c probe\n");
+
+	obj = kzalloc(sizeof(*obj), GFP_KERNEL);
+	if (obj == NULL) {
+		ret = -ENOMEM;
+		HDMITX_DEBUG_PRINTF(DEVICE_NAME ": Allocate ts memory fail\n");
+		return ret;
+	}
+	obj_i2c_data = obj;
+	obj->client = client;
+	it66121_i2c_client = obj->client;
+	i2c_set_clientdata(client, obj);
+
+
+	/* check if chip exist */
+	it66121_i2c_read_byte(0x0, &ids[0]);
+	it66121_i2c_read_byte(0x1, &ids[1]);
+	it66121_i2c_read_byte(0x2, &ids[2]);
+	it66121_i2c_read_byte(0x3, &ids[3]);
+	HDMITX_DEBUG_PRINTF("HDMITX ID: %x-%x-%x-%x\n", ids[0], ids[1], ids[2], ids[3]);
+
+	/* 54-49-12-6 */
+	if (ids[0] != 0x54 || ids[1] != 0x49) {
+		/* || ids[2]!=0x12 || ids[3]!=0x06) */
+		HDMITX_DEBUG_PRINTF("chip ID incorrect: %x-%x-%x-%x !!\n",
+					ids[0], ids[1], ids[2], ids[3]);
+		/* it66121_power_off(); */
+		return -1;
+	}
+	HDMITX_DEBUG_PRINTF("MediaTek HDMI i2c probe success\n");
+
+	HDMITX_DEBUG_PRINTF("\n============================================\n");
+	HDMITX_DEBUG_PRINTF("IT66121 HDMI Version\n");
+	HDMITX_DEBUG_PRINTF("============================================\n");
+
+	init_waitqueue_head(&hdmi_timer_wq);
+	hdmi_timer_task = kthread_create(hdmi_timer_kthread, NULL,
+										"hdmi_timer_kthread");
+	wake_up_process(hdmi_timer_task);
+
+#if defined(CUST_EINT_EINT_HDMI_HPD_NUM)
+
+	HDMITX_DEBUG_PRINTF(">>IT66121 Request IRQ\n");
+
+	mt_eint_set_sens(CUST_EINT_EINT_HDMI_HPD_NUM, MT_LEVEL_SENSITIVE);
+	mt_eint_registration(CUST_EINT_EINT_HDMI_HPD_NUM,
+				EINTF_TRIGGER_LOW, &_it66121_irq_handler, 0);
+	mt_eint_mask(CUST_EINT_EINT_HDMI_HPD_NUM);
+
+	HDMITX_DEBUG_PRINTF("<<IT66121 Request IRQ\n");
+#endif
+
+
+
+	return 0;
+}
+#endif
+
+//add by kzhkzh 20220819 for HDMI
+static int roco_fb_notifier_callback(
+                       struct notifier_block *self,
+                       unsigned long event, void *data)
+{
+	struct fb_event *evdata = NULL;
+	int blank;
+
+	evdata = data;
+	if (event != FB_EVENT_BLANK)
+		return 0;
+
+	blank = *(int *)evdata->data;
+	switch (blank) {
+		case FB_BLANK_UNBLANK:
+			pr_info("[ROCO-HDMI kzhkzh ] LCD ON\n");
+			MS7210_power_on();
+			break;
+		case FB_BLANK_POWERDOWN:
+			pr_info("[ROCO-HDMI kzhkzh] LCD OFF\n");
+			it66121_power_down();
+			break;
+		default:
+			break;
+	}
+
+	return 0;
+}
+//add by kzhkzh 20220819 for HDMI
+
+/*----------------------------------------------------------------------------*/
+
+static int hdmi_ite_probe(struct i2c_client *client,
+			  const struct i2c_device_id *id)
+{
+	//int ret = 0;
+	u8 ids[4] = { 0 };
+
+	printk(">>%s\n", __func__);
+	/* static struct mxc_lcd_platform_data *plat_data; */
+	if (!i2c_check_functionality(client->adapter,
+				     I2C_FUNC_SMBUS_BYTE | I2C_FUNC_I2C))
+		return -ENODEV;
+	printk(">>befer  kzhkzh %s:%d,client->addr:0x%x\n",__func__,__LINE__,client->addr);	
+	client->addr = 0x2b;	
+	printk(">>after kzhkzh %s:%d,client->addr:0x%x\n",__func__,__LINE__,client->addr);
+#if 0
+	if (match_id(&hdmi_ite_id[0], client)) {
+
+		HDMITX_DEBUG_PRINTF(">>Match id Done\n");
+
+		it66121_i2c_client = client;
+		dev_info(
+			&client->adapter->dev,
+			"attached hmdi_ite_id[0] %s into i2c adapter successfully\n",
+			id->name);
+
+		if (it66121_i2c_client != NULL) {
+			HDMITX_DEBUG_PRINTF(
+				"\n============================================\n");
+			HDMITX_DEBUG_PRINTF("IT66121 HDMI Version\n");
+			HDMITX_DEBUG_PRINTF(
+				"============================================\n");
+
+			init_waitqueue_head(&hdmi_timer_wq);
+			hdmi_timer_task = kthread_create(
+				hdmi_timer_kthread, NULL, "hdmi_timer_kthread");
+			wake_up_process(hdmi_timer_task);
+
+#if defined(CUST_EINT_EINT_HDMI_HPD_NUM)
+
+			HDMITX_DEBUG_PRINTF(">>IT66121 Request IRQ\n");
+			mt_eint_set_sens(CUST_EINT_EINT_HDMI_HPD_NUM,
+					 MT_LEVEL_SENSITIVE);
+			mt_eint_registration(CUST_EINT_EINT_HDMI_HPD_NUM,
+					     EINTF_TRIGGER_LOW,
+					     &_it66121_irq_handler, 0);
+			mt_eint_mask(CUST_EINT_EINT_HDMI_HPD_NUM);
+			HDMITX_DEBUG_PRINTF("<<IT66121 Request IRQ\n");
+#endif
+		}
+	} else {
+		HDMITX_DEBUG_PRINTF(
+			"kzhkzh invalid i2c adapter: can not found dev_id matched\n");
+		return -EIO;
+	}
+#else
+	//if (strcmp(client->name, "i2c_it66121") == 0) {
+
+		HDMITX_DEBUG_PRINTF(" kzhkzh >>Match id Done\n");
+
+		it66121_i2c_client = client;
+
+		if (it66121_i2c_client != NULL) {
+			HDMITX_DEBUG_PRINTF("======\n");
+			HDMITX_DEBUG_PRINTF("IT66121 HDMI Version\n");
+			HDMITX_DEBUG_PRINTF("======\n");
+			hdmi_powerenable = 1;
+                if (it66121_i2c_read_byte(0x0, &ids[0])<0&&\
+			        it66121_i2c_read_byte(0x1, &ids[1])<0&&\
+			        it66121_i2c_read_byte(0x2, &ids[2])<0&&\
+			        it66121_i2c_read_byte(0x3, &ids[3])<0)
+                {
+                  printk(" kzhkzh IT66121 HDMI can not find!!!!!!!!!%d  %d   %d  %d\n",ids[0],ids[1],ids[2],ids[3]);
+				  hdmi_powerenable = 0;
+				  hdmi_find_chip = 0;
+				 return -1;
+                }else{
+                      hdmi_find_chip = 1;
+                  printk("IT66121 HDMI find is OK!!!!!!!!!%d  %d  %d  %d\n",ids[0],ids[1],ids[2],ids[3]);
+                }
+		      hdmi_powerenable = 0;
+			init_waitqueue_head(&hdmi_timer_wq);
+			hdmi_timer_task =
+			    kthread_create(hdmi_timer_kthread,
+				NULL, "hdmi_timer_kthread");
+			wake_up_process(hdmi_timer_task);
+		}
+	//}
+#endif
+
+	//add by kzhkzh 20220819 for HDMI
+	roco_fb_notifier.notifier_call = roco_fb_notifier_callback;
+	if (fb_register_client(&roco_fb_notifier))
+			pr_err("register fb_notifier fail!\n");
+
+	HDMITX_DEBUG_PRINTF("<<%s\n", __func__);
+
+	return 0;
+}
+
+#define HDMI_MAX_INSERT_CALLBACK 10
+static CABLE_INSERT_CALLBACK hdmi_callback_table[HDMI_MAX_INSERT_CALLBACK];
+void hdmi_register_cable_insert_callback(CABLE_INSERT_CALLBACK cb)
+{
+	int i = 0;
+
+	for (i = 0; i < HDMI_MAX_INSERT_CALLBACK; i++) {
+		if (hdmi_callback_table[i] == cb)
+			break;
+	}
+	if (i < HDMI_MAX_INSERT_CALLBACK)
+		return;
+
+	for (i = 0; i < HDMI_MAX_INSERT_CALLBACK; i++) {
+		if (hdmi_callback_table[i] == NULL)
+			break;
+	}
+	if (i == HDMI_MAX_INSERT_CALLBACK) {
+		HDMITX_DEBUG_PRINTF("not enough mhl callback entries for module\n");
+		return;
+	}
+
+	hdmi_callback_table[i] = cb;
+	HDMITX_DEBUG_PRINTF("callback: %p,i: %d\n", hdmi_callback_table[i], i);
+}
+
+void hdmi_unregister_cable_insert_callback(CABLE_INSERT_CALLBACK cb)
+{
+	int i;
+
+	for (i = 0; i < HDMI_MAX_INSERT_CALLBACK; i++) {
+		if (hdmi_callback_table[i] == cb) {
+			HDMITX_DEBUG_PRINTF(
+				"unregister cable insert callback: %p, i: %d\n",
+				hdmi_callback_table[i], i);
+			hdmi_callback_table[i] = NULL;
+			break;
+		}
+	}
+	if (i == HDMI_MAX_INSERT_CALLBACK) {
+		HDMITX_DEBUG_PRINTF(
+			"Try to unregister callback function 0x%lx which was not registered\n",
+			(unsigned long int)cb);
+		return;
+	}
+}
+
+void hdmi_invoke_cable_callbacks(enum HDMI_STATE state)
+{
+	int i = 0, j = 0;
+
+	for (i = 0; i < HDMI_MAX_INSERT_CALLBACK; i++) {
+		if (hdmi_callback_table[i])
+			j = i;
+	}
+
+	if (hdmi_callback_table[j]) {
+		HDMITX_DEBUG_PRINTF("callback: %p, state: %d, j: %d\n",
+			    hdmi_callback_table[j], state, j);
+		hdmi_callback_table[j](state);
+	}
+}
+
+const struct HDMI_DRIVER *HDMI_GetDriver(void)
+{
+	static const struct HDMI_DRIVER HDMI_DRV = {
+		.set_util_funcs = it66121_set_util_funcs, /*  */
+		.get_params = it66121_get_params,	 /*  */
+		.init = MS7210_init,			  /* InitHDMITX */
+		/* .enter          = it66121_enter, */
+		/* .exit           = it66121_exit, */
+		.suspend = it66121_suspend,
+		.resume = it66121_resume,
+		.video_config =
+			MS7210_video_config,
+			/* it66121_video_config,HDMITX_SetOutput*/
+		.audio_config =
+			it66121_audio_config,
+			/* it66121_audio_config,HDMITX_SetAudioOutput*/
+		.video_enable =
+			it66121_video_enable,
+			/* HDMITX_EnableVideoOutput */
+		.audio_enable =
+			it66121_audio_enable,    /* HDMITX_SetAudioOutput */
+		.power_on = MS7210_power_on,    /* HDMITX_PowerOn */
+		.power_off = it66121_power_down, /* HDMITX_PowerDown */
+		/* .set_mode             = it66121_set_mode, */
+		.dump = it66121_dump, /* it66121_dump,DumpHDMITXReg */
+		.getedid = MS7210_AppGetEdidInfo,
+		/* .read           = it66121_read, */
+		/* .write          = it66121_write, */
+		.get_state = it66121_get_state,
+		.log_enable = HDMITX_DEBUG_PRINTF_enable,
+		.register_callback = hdmi_register_cable_insert_callback,
+		.unregister_callback = hdmi_unregister_cable_insert_callback,
+	};
+
+	return &HDMI_DRV;
+}
+EXPORT_SYMBOL(HDMI_GetDriver);
+
+
+#if 0
+int ite66121_pmic_power_on(void)
+{
+	int ret;
+
+	pinctrl_select_state(hdmi_pinctrl, pins_hdmi_func);
+
+	if (hdmi_use_pmic_supply) {
+		ret = regulator_enable(hdmi_vrf12);
+		ret = regulator_enable(hdmi_vcn18);
+		ret = regulator_enable(hdmi_vcn33);
+		if (ret != 0)
+			HDMITX_DEBUG_PRINTF("hdmi regolator error\n");
+	}
+
+	HDMITX_DEBUG_PRINTF("%s\n", __func__);
+	return 1;
+}
+#endif
+
+int ite66121_pmic_power_off(void)
+{
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI	
+	int ret;
+#endif
+	pinctrl_select_state(hdmi_pinctrl, pins_hdmi_gpio);
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI	
+	ret = regulator_disable(hdmi_vcn33);
+	ret = regulator_disable(hdmi_vcn18);
+	ret = regulator_disable(hdmi_vrf12);
+
+	if (ret != 0)
+		HDMITX_DEBUG_PRINTF("hdmi regolator error\n");
+#endif
+	msleep(10);
+	gpio_direction_output(hdmi_power_pin, 0);
+	
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI
+	ret = regulator_disable(hdmi_vsim1);
+	if (ret != 0)
+		HDMITX_DEBUG_PRINTF("hdmi regolator error\n");
+#endif	
+	HDMITX_DEBUG_PRINTF("%s\n", __func__);
+	return 1;
+}
+
+static char debug_buffer[2048];
+
+static void process_dbg_opt(const char *opt)
+{
+	unsigned int vadr_regstart, val_temp;
+	u8 val;
+	int  ret;
+	struct device_node *dn;
+	int bus_switch_pin;
+	unsigned int res;
+	if (strncmp(opt, "edid", 4) == 0) {
+		HDMITX_DEBUG_PRINTF("resolution = 0x%x\n", sink_support_resolution);
+	}
+	if (strncmp(opt, "res:", 4) == 0) {
+		ret = sscanf(opt + 4, "%x", &res);
+		HDMITX_DEBUG_PRINTF("hdmi %d\n", res);
+		/*MS7210_video_config((enum HDMI_VIDEO_RESOLUTION)res,
+				     HDMI_VIN_FORMAT_RGB888,
+				     HDMI_VOUT_FORMAT_RGB888);*/
+	}
+
+	if (strncmp(opt, "disable", 7) == 0) {
+		HDMITX_DEBUG_PRINTF("disable vrf12\n");
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI		
+		ret = regulator_disable(hdmi_vrf12);
+#endif		
+	}
+	if (strncmp(opt, "enable", 6) == 0) {
+		HDMITX_DEBUG_PRINTF("enable vrf12\n");
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI		
+		ret = regulator_enable(hdmi_vrf12);
+#endif		
+	}
+	if (strncmp(opt, "on", 2) == 0) {
+		dn = of_find_compatible_node(NULL, NULL,
+					     "mediatek,mt8168-hdmitx");
+		if (dn == NULL)
+			HDMITX_DEBUG_PRINTF("dn == NULL");
+		bus_switch_pin = of_get_named_gpio(dn, "hdmi_power_gpios", 0);
+		gpio_direction_output(bus_switch_pin, 1);
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI		
+		ret = regulator_enable(hdmi_vsim1);
+#endif
+	}
+
+	if (strncmp(opt, "off", 3) == 0) {
+		dn = of_find_compatible_node(NULL, NULL,
+				"mediatek,mt8168-hdmitx");
+		if (dn == NULL)
+			HDMITX_DEBUG_PRINTF("dn == NULL");
+		bus_switch_pin = of_get_named_gpio(dn, "hdmi_power_gpios", 0);
+		gpio_direction_output(bus_switch_pin, 0);
+#ifndef ROCO_USE_REGULATOR_SUPPOR_HDMI
+		ret = regulator_disable(hdmi_vsim1);
+#endif
+	}
+	if (strncmp(opt, "power_on", 8) == 0) {
+		HDMITX_DEBUG_PRINTF("hdmi power_on\n");
+		MS7210_pmic_power_on();
+	}
+	if (strncmp(opt, "power_off", 9) == 0) {
+		HDMITX_DEBUG_PRINTF("hdmi power_off\n");
+		ite66121_pmic_power_off();
+	}
+	if (strncmp(opt, "init", 4) == 0) {
+		HDMITX_DEBUG_PRINTF("hdmi it66121_init\n");
+		MS7210_init();
+	}
+	if (strncmp(opt, "itepower_on", 11) == 0) {
+		HDMITX_DEBUG_PRINTF("hdmi it66121_power_on\n");
+		MS7210_pmic_power_on();
+		HDMI_reset();
+	}
+	if (strncmp(opt, "itepower_off", 12) == 0) {
+		HDMITX_DEBUG_PRINTF("hdmi it66121_power_off\n");
+		ite66121_pmic_power_off();
+	}
+	if (strncmp(opt, "read:", 5) == 0) {
+		ret = sscanf(opt + 5, "%x", &vadr_regstart);
+		HDMITX_DEBUG_PRINTF("r:0x%08x\n", vadr_regstart);
+		it66121_i2c_read_byte(vadr_regstart, &val);
+		HDMITX_DEBUG_PRINTF("0x%08x = 0x%x\n", vadr_regstart, val);
+	}
+	if (strncmp(opt, "write:", 6) == 0) {
+		ret = sscanf(opt + 6, "%x=%x", &vadr_regstart, &val_temp);
+		val = (u8)val_temp;
+		HDMITX_DEBUG_PRINTF("w:0x%08x=0x%x\n", vadr_regstart, val);
+		it66121_i2c_write_byte(vadr_regstart, val);
+	}
+
+	if (strncmp(opt, "reg_dump", 8) == 0) {
+		#if 0
+		HDMITX_DEBUG_PRINTF("***** basic reg bank0 dump start *****\n");
+		//IT662x_eARC_RX_Bank(0);
+		Switch_HDMITX_Bank(0);
+		HDMITX_DEBUG_PRINTF("|   00 01 02 03 04 05 06 07 08\n");
+		for (i = 0; i <= 248; i = i+8) {
+			HDMITX_DEBUG_PRINTF("%x: %x %x %x %x %x %x %x %x\n",
+				i, HDMITX_ReadI2C_Byte(i),
+			HDMITX_ReadI2C_Byte(i+1),
+			HDMITX_ReadI2C_Byte(i+2),
+			HDMITX_ReadI2C_Byte(i+3),
+			HDMITX_ReadI2C_Byte(i+4),
+			HDMITX_ReadI2C_Byte(i+5),
+			HDMITX_ReadI2C_Byte(i+6),
+			HDMITX_ReadI2C_Byte(i+7));
+		}
+		HDMITX_DEBUG_PRINTF("***** basic reg bank0 dump end *****\n");
+
+		HDMITX_DEBUG_PRINTF("***** basic reg bank1 dump start *****\n");
+		//IT662x_eARC_RX_Bank(1);
+		Switch_HDMITX_Bank(1);
+		HDMITX_DEBUG_PRINTF("|   00 01 02 03 04 05 06 07 08\n");
+		for (i = 0; i <= 248; i = i+8) {
+			HDMITX_DEBUG_PRINTF("%x: %x %x %x %x %x %x %x %x\n",
+				i, HDMITX_ReadI2C_Byte(i),
+			HDMITX_ReadI2C_Byte(i+1),
+			HDMITX_ReadI2C_Byte(i+2),
+			HDMITX_ReadI2C_Byte(i+3),
+			HDMITX_ReadI2C_Byte(i+4),
+			HDMITX_ReadI2C_Byte(i+5),
+			HDMITX_ReadI2C_Byte(i+6),
+			HDMITX_ReadI2C_Byte(i+7));
+		}
+		//IT662x_eARC_RX_Bank(0);
+		Switch_HDMITX_Bank(0);
+		HDMITX_DEBUG_PRINTF("***** basic reg bank1 dump end *****\n");
+		#endif
+	}
+
+}
+
+static void process_dbg_cmd(char *cmd)
+{
+	char *tok;
+
+	pr_debug("[extd] %s\n", cmd);
+
+	while ((tok = strsep(&cmd, " ")) != NULL)
+		process_dbg_opt(tok);
+}
+
+static int debug_open(struct inode *inode, struct file *file)
+{
+	file->private_data = inode->i_private;
+	return 0;
+}
+
+static ssize_t debug_write(struct file *file, const char __user *ubuf,
+			   size_t count, loff_t *ppos)
+{
+	const int debug_bufmax = sizeof(debug_buffer) - 1;
+	size_t ret;
+
+	ret = count;
+
+	if (count > debug_bufmax)
+		count = debug_bufmax;
+
+	if (copy_from_user(&debug_buffer, ubuf, count))
+		return -EFAULT;
+
+	debug_buffer[count] = 0;
+
+	process_dbg_cmd(debug_buffer);
+
+	return ret;
+}
+static const char STR_HELP[] = "\n"
+			       "USAGE\n"
+			       "HDMI power on:\n"
+			       "		echo power_on>hdmi_test"
+
+			       "\n";
+
+static ssize_t debug_read(struct file *file, char __user *ubuf, size_t count,
+			  loff_t *ppos)
+{
+	const int debug_bufmax = sizeof(debug_buffer) - 1;
+	int n = 0;
+
+	n += scnprintf(debug_buffer + n, debug_bufmax - n, STR_HELP);
+	debug_buffer[n++] = 0;
+
+	return simple_read_from_buffer(ubuf, count, ppos, debug_buffer, n);
+}
+
+static const struct file_operations debug_fops = {
+	.read = debug_read, .write = debug_write, .open = debug_open,
+};
+struct dentry *ite66121_dbgfs;
+
+void ITE66121_DBG_Init(void)
+{
+	ite66121_dbgfs = debugfs_create_file("hdmi_test", S_IFREG | 0444,
+					     NULL, (void *)0, &debug_fops);
+}
+
+void hdmi_poll_isr(struct timer_list *timer)
+{
+	atomic_set(&hdmi_timer_event, 1);
+	wake_up_interruptible(&hdmi_timer_wq);
+	mod_timer(&r_hdmi_timer, jiffies + 1000 / (1000 / HZ));
+}
+
+void vGet_Pinctrl_Mode(struct platform_device *pdev)
+{
+	int ret = 0;
+
+	if (pdev == NULL)
+		HDMITX_DEBUG_PRINTF("vGet_DDC_Mode Error, Invalid device pointer\n");
+
+	hdmi_pinctrl = devm_pinctrl_get(&pdev->dev);
+	if (IS_ERR(hdmi_pinctrl)) {
+		ret = PTR_ERR(hdmi_pinctrl);
+		HDMITX_DEBUG_PRINTF("HDMI pins, failure of setting\n");
+	} else {
+		pins_hdmi_func =
+			pinctrl_lookup_state(hdmi_pinctrl, "hdmi_poweron");
+		if (IS_ERR(pins_hdmi_func)) {
+			ret = PTR_ERR(pins_hdmi_func);
+			HDMITX_DEBUG_PRINTF(
+				"cannot find pins_hdmi_func pinctrl hdmi_poweron\n");
+		}
+
+		pins_hdmi_gpio =
+			pinctrl_lookup_state(hdmi_pinctrl, "hdmi_poweroff");
+		if (IS_ERR(pins_hdmi_gpio)) {
+			ret = PTR_ERR(pins_hdmi_gpio);
+			HDMITX_DEBUG_PRINTF(
+				"cannot find pins_hdmi_gpio pinctrl hdmi_poweroff\n");
+		}
+
+/* 		pins_hdmi_rst_hi =
+			pinctrl_lookup_state(hdmi_pinctrl, "hdmi_rst_high");
+		if (IS_ERR(pins_hdmi_rst_hi)) {
+			ret = PTR_ERR(pins_hdmi_rst_hi);
+			HDMITX_DEBUG_PRINTF(
+				"cannot find pins_hdmi_rst_hi pinctrl hdmi_rst_high\n");
+		}
+
+		pins_hdmi_rst_lo =
+			pinctrl_lookup_state(hdmi_pinctrl, "hdmi_rst_low");
+		if (IS_ERR(pins_hdmi_rst_lo)) {
+			ret = PTR_ERR(pins_hdmi_rst_lo);
+			HDMITX_DEBUG_PRINTF(
+				"cannot find pins_hdmi_rst_lo pinctrl hdmi_rst_low\n");
+		}
+
+		pins_hdmi_rst_disable =
+			pinctrl_lookup_state(hdmi_pinctrl, "hdmi_rst_disable");
+		if (IS_ERR(pins_hdmi_rst_disable)) {
+			ret = PTR_ERR(pins_hdmi_rst_disable);
+			HDMITX_DEBUG_PRINTF(
+				"cannot find pins_hdmi_rst_disable pinctrl hdmi_rst_disable\n");
+		} */
+	}
+}
+
+int hdmi_internal_probe(struct platform_device *pdev)
+{
+	//int ret = 0;
+	#ifdef ROCO_USE_REGULATOR_SUPPOR_HDMI
+	struct device_node *dn;
+	#endif
+	
+	HDMITX_DEBUG_PRINTF(">>> %s,\n", __func__);
+
+	/* HDMI_reset(); */
+       if (hdmi_find_chip==0) {return 1;}
+
+	/* This leave for MT6592 initialize it66121 */
+	/* register i2c device */
+	/*if (ret)
+	 *	HDMITX_DEBUG_PRINTF(KERN_ERR "%s: failed to add it66121 i2c driver\n",
+	 *		__func__);
+	 */
+	vGet_Pinctrl_Mode(pdev);
+	pinctrl_select_state(hdmi_pinctrl, pins_hdmi_gpio);
+	
+#ifdef ROCO_USE_REGULATOR_SUPPOR_HDMI
+	dn = of_find_compatible_node(NULL, NULL, "mediatek,mt8168-hdmitx");
+	if (dn == NULL)
+		HDMITX_DEBUG_PRINTF("dn == NULL");
+	hdmi_power_pin = of_get_named_gpio(dn, "hdmi_power_gpios", 0);
+//	hdmi_5v_pin = of_get_named_gpio(dn, "hdmi_5v_gpios", 0);
+	hdmi_reset_pin = of_get_named_gpio(dn, "hdmi_reset_gpios", 0);
+#else
+	hdmi_vcn33 = devm_regulator_get(&pdev->dev, "vcn33");
+	hdmi_vcn18 = devm_regulator_get(&pdev->dev, "vcn18");
+	hdmi_vrf12 = devm_regulator_get(&pdev->dev, "vrf12");
+	hdmi_vsim1 = devm_regulator_get(&pdev->dev, "vsim1");
+
+	if (IS_ERR(hdmi_vsim1))
+		HDMITX_DEBUG_PRINTF("hdmi hdmi_vsim1 error\n");
+	if (IS_ERR(hdmi_vcn33))
+		HDMITX_DEBUG_PRINTF("hdmi hdmi_vcn33 error\n");
+	if (IS_ERR(hdmi_vcn18))
+		HDMITX_DEBUG_PRINTF("hdmi hdmi_vcn18 error\n");
+	if (IS_ERR(hdmi_vrf12))
+		HDMITX_DEBUG_PRINTF("hdmi hdmi_vrf12 error\n");
+#endif
+	memset((void *)&r_hdmi_timer, 0, sizeof(r_hdmi_timer));
+	timer_setup(&r_hdmi_timer, hdmi_poll_isr, 0);
+	r_hdmi_timer.expires =
+		jiffies + 1000 / (1000 / HZ); /* wait 1s to stable */
+	mod_timer(&r_hdmi_timer,
+				jiffies + 1000 / (1000 / HZ));	
+	//kzh add for kernel-4.19 timer	
+	//r_hdmi_timer.function = hdmi_poll_isr;
+	//init_timer(&r_hdmi_timer);
+
+	ITE66121_DBG_Init();
+	HDMITX_DEBUG_PRINTF("%s done successful\n", __func__);
+	return 0;
+}
+static int hdmi_internal_remove(struct platform_device *dev)
+{
+	return 0;
+}
+
+
+
+
+
+static const struct of_device_id hdmi_of_ids[] = {
+	{
+		.compatible = "mediatek,mt8168-hdmitx",
+	},
+	{} };
+
+static struct platform_driver hdmi_of_driver = {
+	.probe = hdmi_internal_probe,
+	.remove = hdmi_internal_remove,
+	.driver = {
+		.name = "mtkhdmi", .of_match_table = hdmi_of_ids,
+	} };
+
+static int __init mtk_hdmitx_init(void)
+{
+	int ret;
+
+	HDMITX_DEBUG_PRINTF("%s\n", __func__);
+	if (platform_driver_register(&hdmi_of_driver)) {
+		HDMITX_DEBUG_PRINTF("failed to register disp driver\n");
+		ret = -1;
+	}
+
+	return 0;
+}
+static void __exit mtk_hdmitx_exit(void)
+{
+	HDMITX_DEBUG_PRINTF("%s\n", __func__);
+}
+/*----------------------------------------------------------------------------*/
+static int __init ite66121_i2c_board_init(void)
+{
+	int ret = 0;
+#if 0
+	unsigned int i2c_port = 0;
+	struct device_node *dn;
+
+	HDMITX_DEBUG_PRINTF("hdmi %s\n", __func__);
+	dn = of_find_compatible_node(NULL, NULL, "mediatek,mt8168-hdmitx");
+	if (!dn) {
+		HDMITX_DEBUG_PRINTF("Failed to find HDMI node\n");
+		return -EINVAL;
+	}
+	ret = of_property_read_u32(dn, "mediatek,hdmi_bridgeic_port",
+				   &i2c_port);
+	if (ret < 0)
+		i2c_port = 1;
+	HDMITX_DEBUG_PRINTF("i2c_port %d\n", i2c_port);
+	ret = i2c_register_board_info(i2c_port, &it66121_i2c_hdmi, 1);
+	if (ret)
+		pr_debug("failed register hdmi i2c,please check port %d\n",
+			 i2c_port);
+	return ret;
+#else
+	struct device_node *dn;
+
+	printk(" kzhkzh hdmi %s\n", __func__);
+	dn = of_find_compatible_node(NULL, NULL, "mediatek,mt8168-hdmitx");
+	if (!dn) {
+		printk("Failed to find HDMI node\n");
+		return -EINVAL;
+	}	
+		dn = of_find_compatible_node(NULL, NULL, "mediatek,mt8168-hdmitx");
+	if (dn == NULL)
+		printk("dn == NULL");
+	hdmi_power_pin = of_get_named_gpio(dn, "hdmi_power_gpios", 0);
+	gpio_direction_output(hdmi_power_pin, 1);
+	msleep(20);
+#ifdef ROCO_USE_REGULATOR_SUPPOR_HDMI
+	hdmi_reset_pin = of_get_named_gpio(dn, "hdmi_reset_gpios", 0);
+	gpio_direction_output(hdmi_reset_pin, 1);//kzh add for reset always hi
+	msleep(20);
+#endif
+	printk(" kzhkzh hdmi %s:%d\n", __func__,__LINE__);
+	//pinctrl_select_state(hdmi_pinctrl, pins_hdmi_rst_hi);//kzh add for reset always hi
+	ret = i2c_add_driver(&hdmi_ite_i2c_driver);
+	return ret;
+#endif
+}
+/*----------------------------------------------------------------------------*/
+//core_initcall(ite66121_i2c_board_init);
+module_init(ite66121_i2c_board_init);
+late_initcall(mtk_hdmitx_init);
+module_exit(mtk_hdmitx_exit);

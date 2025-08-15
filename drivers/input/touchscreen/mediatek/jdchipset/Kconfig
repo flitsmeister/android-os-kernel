@@ -1,0 +1,12 @@
+#
+# Novatek NT36xxx touchscreen driver configuration
+#
+
+config TOUCHSCREEN_JDCHIPSET
+	bool "JDTECH jd9366"
+	help
+	  Say Y here if you have a Novatek NT36xxx touchscreen connected
+	  to your system.
+
+	  If unsure, say N.
+

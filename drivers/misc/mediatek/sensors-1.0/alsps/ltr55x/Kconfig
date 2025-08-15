@@ -1,0 +1,7 @@
+config MTK_LTR55X
+	bool "LTR55X for MediaTek package"
+	help
+	  It support different type sensor
+	  in this platform. If this option
+	  is set, it will support ambient
+	  and light sensor LTR55X.

@@ -1,0 +1,1 @@
+obj-$(CONFIG_TOUCHSCREEN_FTS_I2C) += focaltech_upgrade_ft8201p.o

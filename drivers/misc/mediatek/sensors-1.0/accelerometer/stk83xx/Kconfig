@@ -1,0 +1,5 @@
+config MTK_STK83XX
+	bool "STK83XX for MediaTek package"
+	default n
+	help
+        If this option is set, it will support stk83xx Accelerometer.

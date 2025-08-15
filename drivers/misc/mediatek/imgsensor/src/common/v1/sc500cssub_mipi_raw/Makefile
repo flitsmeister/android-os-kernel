@@ -1,0 +1,1 @@
+obj-y += sc500cssub_mipi_Sensor.o

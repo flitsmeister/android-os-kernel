@@ -1,0 +1,8 @@
+
+config MTK_MMC5603NJ
+	bool "mmc5603nj for MediaTek package"
+	help
+	  This configuration is for enable or disable mmc5603 magnetic sensor.
+	  Say Y here if you want to support this sensor.
+	  Say N if you not support it.
+	  If no sure, say N.
