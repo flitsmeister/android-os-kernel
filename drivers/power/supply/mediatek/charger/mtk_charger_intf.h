@@ -427,6 +427,9 @@ struct charger_manager {
 	bool force_disable_pp[TOTAL_CHARGER];
 	bool enable_pp[TOTAL_CHARGER];
 	struct mutex pp_lock[TOTAL_CHARGER];
+
+	/* 0:enable charging 1:disable charging */
+	bool prohibit_charger;
 };
 
 /* charger related module interface */

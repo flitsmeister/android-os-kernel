@@ -273,4 +273,14 @@ config TOUCHSCREEN_HYNITRON_TS
 	  If unsure, say N.
 source "drivers/input/touchscreen/mediatek/hynitron/Kconfig"
 
+config TOUCHSCREEN_SITRONIX_TOUCH
+	bool "Sitronix touchscreen"
+	help
+	  Say Y here if you have a Sitronix multitouch panel
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called sitronix_ts.c
+source "drivers/input/touchscreen/mediatek/sitronix_ts/Kconfig"
 endif

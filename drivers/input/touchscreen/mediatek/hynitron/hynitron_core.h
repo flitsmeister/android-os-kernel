@@ -185,6 +185,7 @@ struct hynitron_ts_data{
    	struct work_struct  work;
 	struct workqueue_struct *hyn_workqueue;
 	//spinlock_t irq_lock;
+	struct mutex mutex_bus;
 	u8  device_id;
 	u8  irq_is_disable;
 	s32 use_irq;
@@ -252,7 +253,7 @@ struct hynitron_ts_data{
 };
 extern struct hynitron_ts_data *hyn_ts_data ;
 
-
+#define U8TO32(x1,x2,x3,x4) ((((x1)&0xFF)<<24)|(((x2)&0xFF)<<16)|(((x3)&0xFF)<<8)|((x4)&0xFF))
 
 #endif /*HYNITRON_CORE_H__*/
 

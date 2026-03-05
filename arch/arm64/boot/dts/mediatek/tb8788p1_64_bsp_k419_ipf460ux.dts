@@ -140,11 +140,19 @@
 		hynitron,max-touch-number = <5>;
 		hynitron,display-coords =  <480 480>;
 	};
+
+	sitronix@55 {
+		compatible = "sitronix_ts";
+		reg = <0x55>;
+		irq-gpio = <&pio 5 0x00>;
+		rst-gpio = <&pio 6 0x00>;
+		status = "okay";
+	};
 };
 
 &i2c1 {
     alsps@29 {
-        compatible = "mediatek,alsps";
+	compatible ="mediatek,alsps";  //leewin add
         pinctrl-names = "pin_default", "pin_cfg";
         pinctrl-0 = <&alsps_intpin_default>;
         pinctrl-1 = <&alsps_intpin_cfg>;
@@ -603,7 +611,7 @@
         gpio_lcm_rst = <&pio 45 0>;
         gpio_lcm_1v8_en = <&pio 178 0>;
         gpio_lcm_3v3_en = <&pio 179 0>;
-        gpio_tp_rst = <&pio 6 0>;
+        //gpio_tp_rst = <&pio 6 0>;
         status = "okay";
     };
     panel: panel@0 {
