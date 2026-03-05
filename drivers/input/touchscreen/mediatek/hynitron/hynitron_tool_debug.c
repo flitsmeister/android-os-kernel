@@ -2058,6 +2058,120 @@ static struct attribute_group hyn_attribute_group = {
 };
 /*create sysfs for debug*/
 
+static ssize_t hyn_tpversion_show(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	ssize_t num_read_chars = 0;
+	u8 buf1[10];
+	unsigned int chip_version,module_version,project_version,chip_type,checksum;
+
+	//struct i2c_client *client = container_of(dev, struct i2c_client, dev);
+
+	memset((u8 *)buf1, 0, 10);
+	mutex_lock(&g_device_mutex);
+
+#if  HYN_ESDCHECK_EN
+	hyn_esd_switch(SWITCH_ESD_OFF);
+#endif
+
+	chip_version=0;
+	module_version=0;
+	project_version=0;
+	chip_type=0;
+	checksum=0;
+
+	if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_MUT_CAP){
+		int ret;
+		buf1[0] = 0xD1;
+		buf1[1] = 0x01;
+		ret = cst3xx_i2c_write(hyn_ts_data->client, buf1, 2);
+		if (ret < 0) return -1;
+
+		mdelay(10);
+
+		buf1[0] = 0xD2;
+		buf1[1] = 0x04;
+		ret = cst3xx_i2c_read_register(hyn_ts_data->client, buf1, 4);
+		if (ret < 0) return -1;
+
+		chip_type = buf1[3];
+		chip_type <<= 8;
+		chip_type |= buf1[2];
+
+		project_version |= buf1[1];
+		project_version <<= 8;
+		project_version |= buf1[0];
+
+		buf1[0] = 0xD2;
+		buf1[1] = 0x08;
+		ret = cst3xx_i2c_read_register(hyn_ts_data->client, buf1, 4);
+		if (ret < 0) return -1;
+
+		chip_version = buf1[3];
+		chip_version <<= 8;
+		chip_version |= buf1[2];
+		chip_version <<= 8;
+		chip_version |= buf1[1];
+		chip_version <<= 8;
+		chip_version |= buf1[0];
+
+		buf1[0] = 0xD2;
+		buf1[1] = 0x0C;
+		ret = cst3xx_i2c_read_register(hyn_ts_data->client, buf1, 4);
+		if (ret < 0) return -1;
+
+		checksum = buf1[3];
+		checksum <<= 8;
+		checksum |= buf1[2];
+		checksum <<= 8;
+		checksum |= buf1[1];
+		checksum <<= 8;
+		checksum |= buf1[0];
+
+		buf1[0] = 0xD1;
+		buf1[1] = 0x09;
+		ret = cst3xx_i2c_write(hyn_ts_data->client, buf1, 2);
+
+		num_read_chars = snprintf(buf, 128, "HF_MUT chip_version: 0x%02X,module_version:0x%02X, project_version:0x%02X,chip_type:0x%02X,checksum:0x%02X .\n",chip_version,module_version, project_version,chip_type,checksum);
+
+	} else if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_SEL_CAP){
+		buf1[0]=0xA6;
+		if (hyn_i2c_read(hyn_ts_data->client,(u8 *)buf1, 1, (u8 *)buf1,8) < 0)
+			num_read_chars = snprintf(buf, 128,"get tp fw version fail!\n");
+		else{
+			chip_version  =buf1[0];
+			chip_version |=buf1[1]<<8;
+
+			module_version=buf1[2];
+			project_version=buf1[3];
+
+			chip_type  =buf1[4];
+			chip_type |=buf1[5]<<8;
+
+			checksum  =buf1[6];
+			checksum |=buf1[7]<<8;
+
+			num_read_chars = snprintf(buf, 128, "HF_SEL chip_version: 0x%02X,module_version:0x%02X,project_version:0x%02X,chip_type:0x%02X,checksum:0x%02X .\n",chip_version,module_version, project_version,chip_type,checksum);
+		}
+	}
+	mutex_unlock(&g_device_mutex);
+
+#if  HYN_ESDCHECK_EN
+	hyn_esd_switch(SWITCH_ESD_ON);
+#endif
+	return num_read_chars;
+}
+
+static ssize_t hyn_tpversion_store(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	/*place holder for future use*/
+	return -EPERM;
+}
+
+static struct kobj_attribute hyntpversion_attr =
+	__ATTR(hyntpversion, 0444, hyn_tpversion_show, hyn_tpversion_store);
+
 int hyn_create_sysfs(struct i2c_client *client)
 {
 	int err;
@@ -2076,6 +2190,14 @@ int hyn_create_sysfs(struct i2c_client *client)
 		mutex_init(&g_device_mutex);
 		HYN_INFO("%s() - sysfs_create_group() succeeded.\n",__func__);
 	}
+
+	err = sysfs_create_file(hyn_ts_data->k_obj, &hyntpversion_attr.attr);
+	if (err) {
+		HYN_INFO("%s() - create hyntpversion failed\n", __func__);
+		sysfs_remove_group(hyn_ts_data->k_obj, &hyn_attribute_group);
+		sysfs_remove_file(hyn_ts_data->k_obj, &hyntpversion_attr.attr);
+		return err;
+	}
 	HYN_FUNC_EXIT();
 	return err;
 }
@@ -2084,6 +2206,7 @@ void hyn_release_sysfs(struct i2c_client *client)
 {
 	if(hyn_ts_data->k_obj==NULL) return;
 	
+	sysfs_remove_file(hyn_ts_data->k_obj, &hyntpversion_attr.attr);
 	sysfs_remove_group(hyn_ts_data->k_obj, &hyn_attribute_group);
 	mutex_destroy(&g_device_mutex);		
 }

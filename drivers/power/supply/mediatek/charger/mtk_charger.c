@@ -1683,8 +1683,38 @@ static ssize_t store_pdc_max_watt_level(struct device *dev,
 
 	return size;
 }
+
 static DEVICE_ATTR(pdc_max_watt, 0644, show_pdc_max_watt_level,
 		store_pdc_max_watt_level);
+static ssize_t charger_control_show(struct device *dev,
+                                   struct device_attribute *attr, char *buf)
+{
+	struct charger_manager *pinfo = dev->driver_data;
+	return sprintf(buf, "%d\n", pinfo->prohibit_charger ? 1 : 0);
+}
+
+static ssize_t charger_control_store(struct device *dev,
+                                    struct device_attribute *attr,
+                                    const char *buf, size_t count)
+{
+	unsigned long val;
+	struct charger_manager *pinfo = dev->driver_data;
+
+	if (kstrtoul(buf, 10, &val))
+		return -EINVAL;
+		chr_err("%s: val=%d\n", __func__, val);
+	if (val == 1) {
+		pinfo->prohibit_charger = true;
+	} else if (val == 0) {
+		pinfo->prohibit_charger = false;
+	} else {
+		return -EINVAL;
+	}
+	pr_debug("%s: status=%d\n", __func__, val);
+	return count;
+}
+
+static DEVICE_ATTR_RW(charger_control);
 
 int mtk_get_dynamic_cv(struct charger_manager *info, unsigned int *cv)
 {
@@ -1803,7 +1833,7 @@ void mtk_charger_int_handler(void)
 	chr_err("wake_up_charger\n");
 	_wake_up_charger(pinfo);
 }
-
+//lwb add
 int g_isnot_first = 0;
 
 static int mtk_charger_plug_in(struct charger_manager *info,
@@ -1829,6 +1859,8 @@ static int mtk_charger_plug_in(struct charger_manager *info,
 	charger_dev_plug_in(info->chg1_dev);
 	return 0;
 }
+
+
 
 static int mtk_charger_plug_out(struct charger_manager *info)
 {
@@ -2183,7 +2215,7 @@ static void charger_check_status(struct charger_manager *info)
 	} else {
 
 		if (thermal->enable_min_charge_temp) {
-			if (temperature < thermal->min_charge_temp) {
+			if (temperature < (thermal->min_charge_temp + 9)) {
 				chr_err("Battery Under Temperature or NTC fail %d %d\n",
 					temperature, thermal->min_charge_temp);
 				thermal->sm = BAT_TEMP_LOW;
@@ -2204,7 +2236,7 @@ static void charger_check_status(struct charger_manager *info)
 			}
 		}
 
-		if (temperature >= thermal->max_charge_temp) {
+		if (temperature >= (thermal->max_charge_temp - 16)) {
 			chr_err("Battery over Temperature or NTC fail %d %d\n",
 				temperature, thermal->max_charge_temp);
 			thermal->sm = BAT_TEMP_HIGH;
@@ -2212,7 +2244,7 @@ static void charger_check_status(struct charger_manager *info)
 			goto stop_charging;
 		} else if (thermal->sm == BAT_TEMP_HIGH) {
 			if (temperature
-			    < thermal->max_charge_temp_minus_x_degree) {
+			    <= thermal->max_charge_temp_minus_x_degree) {
 				chr_err("Battery Temperature raise from %d to %d(%d), allow charging!!\n",
 				thermal->max_charge_temp,
 				temperature,
@@ -2240,10 +2272,18 @@ static void charger_check_status(struct charger_manager *info)
 		charging = false;
 	if (info->sc.disable_charger == true)
 		charging = false;
+	if (info->prohibit_charger == true)
+		charging = false;
 
+        //printk("leewin--->%s battery temperature = %d\n", __func__, temperature);
         if (temperature > 55 ) {
                 charging = false;
-                printk("battery temperature > 55 stop charging\n");
+                printk("leewin--->%s battery now temperature[%d] > 55 stop charging\n", temperature, __func__);
+                goto stop_charging;
+        }
+        if (temperature < -1 ) {
+                charging = false;
+                printk("%s battery now temperature temperature[%d] < -1 stop charging\n", temperature, __func__);
                 goto stop_charging;
         }
 
@@ -3638,6 +3678,10 @@ static int mtk_charger_setup_files(struct platform_device *pdev)
 	if (ret)
 		goto _out;
 
+	ret = device_create_file(&(pdev->dev), &dev_attr_charger_control);
+	if (ret)
+		goto _out;
+
 	battery_dir = proc_mkdir("mtk_battery_cmd", NULL);
 	if (!battery_dir) {
 		chr_err("[%s]: mkdir /proc/mtk_battery_cmd failed\n", __func__);
@@ -4431,6 +4475,7 @@ static int mtk_charger_probe(struct platform_device *pdev)
 	info->dvchg2_data.thermal_input_current_limit = -1;
 
 	info->sw_jeita.error_recovery_flag = true;
+	info->prohibit_charger = false;
 
 //IPF460_UX30 add begin
 #if defined(CONFIG_MTK_DC_USB_INPUT_CHARGER_SUPPORT)
@@ -4521,6 +4566,7 @@ static int mtk_charger_probe(struct platform_device *pdev)
 		&dev_attr_sc_ibat_limit);
 	ret_device_file = device_create_file(&(pdev->dev),
 		&dev_attr_sc_test);
+
 
 	info->chg1_consumer =
 		charger_manager_get_by_name(&pdev->dev, "charger_port1");

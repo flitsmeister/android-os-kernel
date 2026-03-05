@@ -134,6 +134,8 @@ extern struct LCM_DRIVER pf163_ol_ek79208ac_hjc_wxga_101_lcm_drv;
 extern struct LCM_DRIVER pf163_yds_nt36523_wuxga2000_ips_103_lcm_drv;
 extern struct LCM_DRIVER pf196_bns_hx8279_101c026fhd827d40e_wuxga_8_lcm_drv;
 extern struct LCM_DRIVER ipf460_hf_st7701s_32825_ips_qvga_2_lcm_drv;
+extern struct LCM_DRIVER ipf460_hf_st7701s_32825_ips_qvga_zy_lcm_drv;
+extern struct LCM_DRIVER ipf460_hf_st7102_32242_ips_qvga_lcm_drv;
 extern struct LCM_DRIVER pf829_nv_lt9711exb_boe_wuxgal_ips_120_lcm_drv;
 #else//add for MT8768 - MT8766
 extern struct LCM_DRIVER us716_fx_jd9365_boe_wxga_ips_101_lcm_drv;

@@ -23,6 +23,7 @@
 #include "hynitron_update_firmware.h" 
 
 #include "firmware/capacitive_hynitron_cst3240_update.h"
+#include "firmware/capacitive_hynitron_cst3240_update_zy.h"
 #include "firmware/capacitive_hynitron_cst0xx_update.h"
 #include "firmware/capacitive_hynitron_cst1xxse_update.h"
 //#include "firmware/capacitive_hynitron_cst2xx_update.h"
@@ -41,7 +42,8 @@ struct hynitron_fw_array hynitron_fw_grp[20] = {
 	{ "capacitive_hynitron_cst2xxse_update", cst2xxse_fw, 0x0501,0x01, CST226SE, (sizeof(cst2xxse_fw))},
 	{ "capacitive_hynitron_cst1xxse_update", cst1xxse_fw, 0x2107,0x01, CST18858SE, (sizeof(cst1xxse_fw))},
 	{ "capacitive_hynitron_cst3xx_update",   cst3xx_fw,   0x4375,0x11, CST340, (sizeof(cst3xx_fw))},	
-	{ "capacitive_hynitron_cst3240_update",  cst3240_fw,   0x3604,0x01, CST3240, (sizeof(cst3240_fw))},	
+	{ "capacitive_hynitron_cst3240_update",  cst3240_fw,   0x3604,0x00, CST3240, (sizeof(cst3240_fw))},	
+	{ "capacitive_hynitron_cst3240_update_zy",  cst3240_fw_zy,   0x3604,0x03, CST3240, (sizeof(cst3240_fw_zy))},	
 	{ "capacitive_hynitron_cst6xx_update",   cst6xx_fw,   0x2117,0x11, CST6928S, (sizeof(cst6xx_fw))},
 	{ "capacitive_hynitron_cst3xxse_update", cst3xxse_fw, 0x0501,0x01, CST328SE, (sizeof(cst3xxse_fw))},
 	{ "capacitive_hynitron_cst8xx_update",   cst8xx_fw,   0x0501,0x01, CST836, (sizeof(cst8xx_fw))},
@@ -3354,8 +3356,8 @@ int cst3xx_firmware_info(struct i2c_client * client)
 	ret = cst3xx_i2c_read_register(client, buf, 1);
 	if (ret < 0) return -1;
 
-	hyn_ts_data->chip_ic_module_id=buf[0];	
-	HYN_INFO("chip_ic_module_id:0x%x.\n",hyn_ts_data->chip_ic_module_id);
+	// hyn_ts_data->chip_ic_module_id=buf[0];	
+	// HYN_INFO("chip_ic_module_id:0x%x.\n",hyn_ts_data->chip_ic_module_id);
 
     buf[0] = 0xD1;
 	buf[1] = 0x09;
@@ -3429,13 +3431,15 @@ static int hyn_find_fw_idx(u8 check_project_id)
 				 &&(hyn_ts_data->chip_ic_type   	 ==hynitron_fw_grp[i].chip_type)){
 					return i;	
 				}
-			}else{
-				if(hyn_ts_data->config_chip_type ==hynitron_fw_grp[i].chip_type){
+			}
+			else{
+				if((hyn_ts_data->chip_ic_module_id  ==hynitron_fw_grp[i].module_id)
+				 &&(hyn_ts_data->chip_ic_type   	 ==hynitron_fw_grp[i].chip_type)){
 					return i;
 				}
+
 			}
 			
-
 		}
 	}
 	HYN_FUNC_EXIT();
@@ -3717,7 +3721,7 @@ static int cst3xx_bootloader_enter(struct i2c_client *client)
 	return 0;
 }
 
-static int cst3240_bootloader_enter(struct i2c_client * client)
+int cst3240_bootloader_enter(struct i2c_client * client)
 {
 	int ret=-1;
 	u8  retry;

@@ -122,6 +122,7 @@ struct eta696x_info {
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *psc_chg_en_low;
 	struct pinctrl_state *psc_chg_en_high;
+	struct charger_consumer *consumer;
 } *g_eta696x_info;
 
 static const struct charger_properties eta696x_chg_props = {
@@ -999,7 +1000,8 @@ static int eta696x_enable_charging(struct charger_device *chg_dev,
 	int status = 0;
 	int ret = 0;
 	//struct eta696x_info * info = g_eta696x_info;
-
+	struct eta696x_info *info = NULL;
+	struct charger_manager *mgr = NULL;
         if(!g_eta696x_bat_exist){ //lewin add
 		//g_eta696x_bat_exist = 1;
 		en = 0;
@@ -1033,6 +1035,13 @@ static int eta696x_enable_charging(struct charger_device *chg_dev,
 		//	pr_err("mycat Ok pinctrl_select_state high");
 		//}
 		/*eta696x_set_en_hiz(0x1);*/
+		/* get eta696x_info saved as driver data when registering charger_device */
+		info = dev_get_drvdata(&chg_dev->dev);
+		if (info && info->consumer)
+			mgr = info->consumer->cm;
+
+		if (mgr && mgr->prohibit_charger)
+			eta696x_set_en_hiz(0x1);
 	}
 
 	return status;
@@ -1769,6 +1778,11 @@ static int eta696x_platform_probe(struct platform_device *pdev)
 		ret = PTR_ERR(info->chg_dev);
 		return ret;
 	}
+
+	/* get charger_manager consumer (allows access to struct charger_manager via consumer->cm) */
+	info->consumer = charger_manager_get_by_name(&pdev->dev, info->chg_dev_name);
+	if (!info->consumer)
+		pr_info("%s: charger_manager_get_by_name failed for %s\n", __func__, info->chg_dev_name);
 	
 	#if 0
 	/* power supply register */
