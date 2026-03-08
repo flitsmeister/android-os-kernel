@@ -1282,10 +1282,11 @@ static ssize_t show_Battery_Temperature(
 	struct device *dev, struct device_attribute *attr,
 					       char *buf)
 {
+	battery_main.BAT_batt_temp = force_get_tbat(true);
 	bm_err("%s: %d %d\n",
 		__func__,
 		battery_main.BAT_batt_temp, gm.fixed_bat_tmp);
-	return sprintf(buf, "%d\n", gm.fixed_bat_tmp);
+	return sprintf(buf, "%d\n", battery_main.BAT_batt_temp);
 }
 
 static ssize_t store_Battery_Temperature(
@@ -1296,7 +1297,7 @@ static ssize_t store_Battery_Temperature(
 
 	if (kstrtoint(buf, 10, &temp) == 0) {
 
-		if (temp > 58 || temp < -10) {
+		if (temp > 75 || temp < -12) {
 			bm_err(
 				"%s: setting tmp:%d!,reject set\n",
 				__func__,
@@ -1329,6 +1330,41 @@ static ssize_t store_Battery_Temperature(
 
 static DEVICE_ATTR(Battery_Temperature, 0664, show_Battery_Temperature,
 		   store_Battery_Temperature);
+
+//lwb add start
+int g_eta696x_bat_exist = 1; //leewin add
+static ssize_t show_bat_online(
+	struct device *dev, struct device_attribute *attr,
+					       char *buf)
+{
+	bm_err("%s: %d %d\n",
+		__func__,
+		g_eta696x_bat_exist, g_eta696x_bat_exist);
+	return sprintf(buf, "%d\n", g_eta696x_bat_exist);
+}
+
+static ssize_t store_bat_online(
+	struct device *dev, struct device_attribute *attr,
+						const char *buf, size_t size)
+{
+	signed int temp;
+
+	if (kstrtoint(buf, 10, &temp) == 0) {
+
+		//gm.g_eta696x_bat_exist = temp;
+
+		bm_err("%s: %d %d not support change the prop\n",
+			__func__,
+			g_eta696x_bat_exist, g_eta696x_bat_exist);
+	}
+
+	return size;
+}
+
+static DEVICE_ATTR(bat_online, 0664, show_bat_online,
+		   store_bat_online);
+
+//lwb add end
 
 static ssize_t show_UI_SOC(
 	struct device *dev, struct device_attribute *attr,
@@ -1760,7 +1796,7 @@ int force_get_tbat_internal(bool update)
 	return bat_temperature_val / 10;
 }
 
-int g_eta696x_bat_exist = 1; //leewin add
+
 
 int force_get_tbat(bool update)
 {
@@ -4468,6 +4504,7 @@ static int __init battery_probe(struct platform_device *dev)
 #endif
 	ret = device_create_file(&(dev->dev), &dev_attr_Battery_Temperature);
 	ret = device_create_file(&(dev->dev), &dev_attr_UI_SOC);
+	ret = device_create_file(&(dev->dev), &dev_attr_bat_online);
 
 	/* sysfs node */
 	ret_device_file = device_create_file(&(dev->dev),

@@ -20,6 +20,7 @@
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
 
+
 int cst3xx_firmware_info(struct i2c_client * client);
 
 

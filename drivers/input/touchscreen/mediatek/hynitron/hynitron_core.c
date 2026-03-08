@@ -25,6 +25,10 @@
 #include "hynitron_core.h"
 #include "hynitron_update_firmware.h"
 
+#define HYN_TRANSFER_LIMIT_LEN   (8) //need >= 8
+#define MODULE_ID_ADDR      (0x3FFC)
+extern int cst3240_bootloader_enter(struct i2c_client * client);
+
 /*****************************************************************************
 Main control platform----mtk
 {
@@ -1316,11 +1320,132 @@ static int cst8xx_touch_report(void)
 
     return 0;
 }
+
+int hyn_wr_reg(struct hynitron_ts_data *ts_data, u32 reg_addr, u8 reg_len, u8 *rbuf, u16 rlen)
+{
+    int ret = 0,i=0;
+    u8 wbuf[4];
+    u8 cmd_len = reg_len&0x0F;
+    if(cmd_len==0 || cmd_len > 4) return -1;
+    mutex_lock(&ts_data->mutex_bus);
+    do{
+        i = cmd_len-1;
+        do{
+            wbuf[cmd_len-1-i] = reg_addr>>(i*8);
+        }while(i--);
+        ret = i2c_master_send(ts_data->client, wbuf, cmd_len);
+        if(rlen){
+            ret |= i2c_master_recv(ts_data->client, rbuf, rlen < HYN_TRANSFER_LIMIT_LEN ? rlen : HYN_TRANSFER_LIMIT_LEN);
+        }
+        if(ret < 0 || rlen <= HYN_TRANSFER_LIMIT_LEN) break;
+        rbuf += HYN_TRANSFER_LIMIT_LEN;
+        rlen -= HYN_TRANSFER_LIMIT_LEN;
+        if(0==(reg_len&0x80)){
+            reg_addr += HYN_TRANSFER_LIMIT_LEN;
+        }
+        else{
+            reg_addr = (reg_addr&0xffff0000)|((reg_addr>>8)&0xff)|((reg_addr<<8)&0xff00);
+            reg_addr += HYN_TRANSFER_LIMIT_LEN;
+            reg_addr = (reg_addr&0xffff0000)|((reg_addr>>8)&0xff)|((reg_addr<<8)&0xff00);
+        }
+    }while(1);
+    mutex_unlock(&ts_data->mutex_bus);
+    return ret < 0 ? -1:0;
+}
+
+int hyn_write_data(struct hynitron_ts_data *ts_data, u8 *buf, u8 reg_len, u16 len)
+{
+    int ret = 0;
+    u8 cmd_len = reg_len&0x0F;
+    if(cmd_len > 4) return -1;
+    mutex_lock(&ts_data->mutex_bus);
+#if HYN_TRANSFER_LIMIT_LEN < 1048
+    if(len > HYN_TRANSFER_LIMIT_LEN){
+        u32 reg = U8TO32(buf[0],buf[1],buf[2],buf[3])>>((4-cmd_len)*8);
+        u8 w_buf[HYN_TRANSFER_LIMIT_LEN],i;
+        u16 step = HYN_TRANSFER_LIMIT_LEN-cmd_len;
+        u16 w_len = 0;
+        buf += cmd_len;
+        len -= cmd_len;
+        while(len){
+            i = cmd_len;
+            while(i--){
+                w_buf[cmd_len-1-i] = reg>>(i*8);
+            }
+            memcpy(&w_buf[cmd_len],buf,step);
+            if(0==(reg_len&0x80)){
+                reg += step;
+            }
+            else{
+                reg = (reg&0xffff0000)|((reg>>8)&0xff)|((reg<<8)&0xff00);
+                reg += step;
+                reg = (reg&0xffff0000)|((reg>>8)&0xff)|((reg<<8)&0xff00);
+            }
+            buf += step;
+            if(len > step){
+                w_len = HYN_TRANSFER_LIMIT_LEN;
+                len -= step;
+            }
+            else{
+                w_len = len+cmd_len;
+                len = 0;
+            }
+            ret = i2c_master_send(ts_data->client, w_buf, w_len);
+            if(ret < 0) break;
+        }
+    }else
+#endif
+    {
+        ret = i2c_master_send(ts_data->client, buf, len);
+    }
+    mutex_unlock(&ts_data->mutex_bus);
+    return ret < 0 ? -1:0;
+}
+
+
+static u32 cst3240_fread_word(u32 addr)
+{
+    int ret;
+    u8 rec_buf[4],retry;
+    u32 read_word = 0;
+    retry = 3;
+    while(retry--){
+        ret = hyn_write_data(hyn_ts_data,(u8[]){0xA0,0x18,0x00,0x00,0x00,0x00},2,6);
+        ret  |= hyn_wr_reg(hyn_ts_data,0xA01000,3,0,0); //set section
+        ret |= hyn_wr_reg(hyn_ts_data,U8TO32(0xA0,0x0c,(addr&0xFF),((addr>>8)&0xFF)),4,NULL,0); //set addr
+        ret  |= hyn_wr_reg(hyn_ts_data,0xA004E4,3,NULL,0);	//trig read
+        if(ret ==0) break;
+    }
+    if(ret) return 0;
+    
+    retry = 10;
+	while(retry--){
+        mdelay(2);
+        ret = hyn_wr_reg(hyn_ts_data,0xA018,2,rec_buf,4);	
+        if(ret==0){
+            read_word = U8TO32(rec_buf[3],rec_buf[2],rec_buf[1],rec_buf[0]);
+            ret = hyn_wr_reg(hyn_ts_data,0xA018,2,rec_buf,4);	
+            if(ret == 0 && read_word==U8TO32(rec_buf[3],rec_buf[2],rec_buf[1],rec_buf[0])){
+                break;
+            }
+        }
+	}
+	return read_word;
+}
+
 int hyn_update_firmware_init(struct i2c_client *client)
 {
 	int ret=-1;
 	unsigned char scan_id;
-	
+	u32 module_id;
+	HYN_FUNC_ENTER();
+	cst3240_bootloader_enter(client);
+	module_id = cst3240_fread_word(MODULE_ID_ADDR);
+	hyn_ts_data->chip_ic_module_id = module_id;
+	HYN_INFO("module_id=====>>>>0x%x chip_ic_module_id:0x%x\n",module_id,hyn_ts_data->chip_ic_module_id);
+	HYN_FUNC_EXIT();
+
+
 	HYN_FUNC_ENTER();
 	ret=hyn_firmware_info(client);
 	if(ret<0){
@@ -1794,7 +1919,7 @@ static void hyn_suspend(struct device *h)
 
 	hyn_enter_deep_sleep();
 #else //getsure resume
-	tpd_suspend_getsure_enable=0;
+	tpd_suspend_getsure_enable=1;
 	tpd_suspend_geture_count =0;
 	tpd_suspend_getsure_report_done=0;
 	tpd_suspend_down_state=0;
@@ -1913,6 +2038,8 @@ static int hyn_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		HYN_ERROR("hyn_gpio_configure fail");
 		return -1;
 	}	
+
+	mutex_init(&ts_data->mutex_bus);
 	hyn_ts_data_init(client); 
 	
 	mdelay(60);
@@ -2176,4 +2303,3 @@ module_exit(hynitron_mtk_ts_exit);
 MODULE_AUTHOR("Hynitron Driver Team");
 MODULE_DESCRIPTION("Hynitron Touchscreen Driver");
 MODULE_LICENSE("GPL v2");
-
